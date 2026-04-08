@@ -1,0 +1,1138 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>課堂管理系統</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;600;700&family=DM+Mono:wght@400;500&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #1a1410;
+    --paper: #f5f0e8;
+    --cream: #ede8da;
+    --gold: #c8a84b;
+    --gold-light: #e8d08a;
+    --rust: #a63c2a;
+    --sage: #5a7a5c;
+    --sage-light: #8aab8c;
+    --muted: #7a6f5e;
+    --border: #c8bfa8;
+    --shadow: rgba(26,20,16,0.12);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Noto Serif TC', serif;
+    background: var(--paper);
+    color: var(--ink);
+    min-height: 100vh;
+  }
+
+  /* Texture overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4'%3E%3Crect width='4' height='4' fill='none'/%3E%3Crect width='1' height='1' x='0' y='0' fill='%23c8a84b' opacity='0.04'/%3E%3Crect width='1' height='1' x='2' y='2' fill='%23c8a84b' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .app { position: relative; z-index: 1; max-width: 1280px; margin: 0 auto; padding: 32px 24px; }
+
+  /* Header */
+  header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    border-bottom: 2px solid var(--ink);
+    padding-bottom: 20px;
+    margin-bottom: 36px;
+  }
+
+  .logo-block h1 {
+    font-family: 'Playfair Display', serif;
+    font-size: 2.4rem;
+    letter-spacing: -0.02em;
+    line-height: 1;
+  }
+
+  .logo-block h1 span { color: var(--gold); }
+
+  .logo-block p {
+    font-size: 0.78rem;
+    color: var(--muted);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    margin-top: 4px;
+    font-family: 'DM Mono', monospace;
+  }
+
+  .header-meta {
+    text-align: right;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+
+  .header-meta strong {
+    display: block;
+    font-size: 1.1rem;
+    color: var(--ink);
+    font-family: 'Noto Serif TC', serif;
+    font-weight: 600;
+  }
+
+  /* Summary cards */
+  .summary-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px;
+    margin-bottom: 36px;
+  }
+
+  .card {
+    background: var(--cream);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 20px 24px;
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+
+  .card:hover { transform: translateY(-2px); box-shadow: 0 6px 24px var(--shadow); }
+
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+  }
+
+  .card.gold::before { background: var(--gold); }
+  .card.rust::before { background: var(--rust); }
+  .card.sage::before { background: var(--sage); }
+  .card.ink::before { background: var(--ink); }
+
+  .card-label {
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-family: 'DM Mono', monospace;
+    margin-bottom: 8px;
+  }
+
+  .card-value {
+    font-size: 2.2rem;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -0.02em;
+  }
+
+  .card.gold .card-value { color: var(--gold); }
+  .card.rust .card-value { color: var(--rust); }
+  .card.sage .card-value { color: var(--sage); }
+
+  .card-sub {
+    font-size: 0.75rem;
+    color: var(--muted);
+    margin-top: 6px;
+    font-family: 'DM Mono', monospace;
+  }
+
+  /* Section */
+  .section { margin-bottom: 40px; }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .section-title {
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .section-title .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--gold);
+    display: inline-block;
+  }
+
+  /* Buttons */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 18px;
+    font-family: 'Noto Serif TC', serif;
+    font-size: 0.82rem;
+    font-weight: 600;
+    border: 1.5px solid;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+
+  .btn-primary {
+    background: var(--ink);
+    color: var(--paper);
+    border-color: var(--ink);
+  }
+
+  .btn-primary:hover { background: #2d2520; }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--ink);
+    border-color: var(--border);
+  }
+
+  .btn-ghost:hover { border-color: var(--ink); background: var(--cream); }
+
+  .btn-sm { padding: 5px 12px; font-size: 0.75rem; }
+
+  .btn-danger { background: transparent; color: var(--rust); border-color: var(--rust); }
+  .btn-danger:hover { background: var(--rust); color: white; }
+
+  .btn-sage { background: var(--sage); color: white; border-color: var(--sage); }
+  .btn-sage:hover { background: #4a6a4c; }
+
+  /* Table */
+  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 4px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+
+  thead { background: var(--ink); color: var(--paper); }
+
+  thead th {
+    padding: 12px 16px;
+    text-align: left;
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-family: 'DM Mono', monospace;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  tbody tr { border-bottom: 1px solid var(--border); transition: background 0.1s; }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: var(--cream); }
+
+  td {
+    padding: 12px 16px;
+    vertical-align: middle;
+  }
+
+  .student-name { font-weight: 600; }
+
+  .tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 2px;
+    font-size: 0.7rem;
+    font-family: 'DM Mono', monospace;
+    letter-spacing: 0.05em;
+    font-weight: 500;
+  }
+
+  .tag-gold { background: #f5e8c0; color: #8a6a10; }
+  .tag-rust { background: #f5ddd8; color: var(--rust); }
+  .tag-sage { background: #d8eeda; color: #2a5c2c; }
+  .tag-gray { background: var(--cream); color: var(--muted); }
+
+  .progress-bar-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .progress-bar {
+    flex: 1;
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+    min-width: 60px;
+  }
+
+  .progress-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.3s;
+  }
+
+  .progress-val { font-family: 'DM Mono', monospace; font-size: 0.72rem; color: var(--muted); white-space: nowrap; }
+
+  /* Modal */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(26,20,16,0.55);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(2px);
+  }
+
+  .modal-overlay.active { display: flex; }
+
+  .modal {
+    background: var(--paper);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 32px;
+    width: 92%;
+    max-width: 520px;
+    box-shadow: 0 20px 60px rgba(26,20,16,0.25);
+    animation: modalIn 0.2s ease;
+  }
+
+  @keyframes modalIn {
+    from { opacity: 0; transform: translateY(12px) scale(0.98); }
+    to { opacity: 1; transform: none; }
+  }
+
+  .modal h3 {
+    font-size: 1.15rem;
+    font-weight: 700;
+    margin-bottom: 20px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .form-group { margin-bottom: 16px; }
+
+  .form-group label {
+    display: block;
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    margin-bottom: 6px;
+    color: var(--muted);
+    font-family: 'DM Mono', monospace;
+    text-transform: uppercase;
+  }
+
+  .form-group input, .form-group select {
+    width: 100%;
+    padding: 9px 12px;
+    border: 1.5px solid var(--border);
+    border-radius: 3px;
+    background: var(--cream);
+    font-family: 'Noto Serif TC', serif;
+    font-size: 0.9rem;
+    color: var(--ink);
+    transition: border-color 0.15s;
+    outline: none;
+  }
+
+  .form-group input:focus, .form-group select:focus { border-color: var(--ink); }
+
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+  .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 24px; }
+
+  /* Sessions log */
+  .sessions-mini {
+    max-height: 180px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    background: var(--cream);
+  }
+
+  .session-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.8rem;
+  }
+
+  .session-item:last-child { border-bottom: none; }
+
+  .session-date { font-family: 'DM Mono', monospace; color: var(--muted); font-size: 0.72rem; }
+
+  /* Detail panel */
+  .detail-sessions {
+    margin-top: 12px;
+    max-height: 220px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+  }
+
+  /* Income table */
+  .income-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.875rem;
+  }
+
+  .income-row:last-child { border-bottom: none; }
+  .income-row.total {
+    background: var(--cream);
+    font-weight: 700;
+    font-size: 0.95rem;
+  }
+
+  .income-label { color: var(--muted); font-size: 0.75rem; font-family: 'DM Mono', monospace; }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 0; border-bottom: 2px solid var(--border); margin-bottom: 24px; }
+
+  .tab {
+    padding: 10px 20px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    transition: all 0.15s;
+    color: var(--muted);
+  }
+
+  .tab.active { border-bottom-color: var(--gold); color: var(--ink); }
+  .tab:hover:not(.active) { color: var(--ink); }
+
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* Low balance warning */
+  .low-balance { color: var(--rust); font-weight: 600; }
+
+  /* Action group */
+  .action-group { display: flex; gap: 6px; }
+
+  /* Empty state */
+  .empty-state {
+    text-align: center;
+    padding: 48px;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+
+  .empty-state .icon { font-size: 2.5rem; margin-bottom: 12px; opacity: 0.4; }
+
+  /* Month filter */
+  .filter-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+  .month-select {
+    padding: 7px 12px;
+    border: 1.5px solid var(--border);
+    border-radius: 3px;
+    background: var(--cream);
+    font-family: 'Noto Serif TC', serif;
+    font-size: 0.85rem;
+    color: var(--ink);
+    outline: none;
+    cursor: pointer;
+  }
+
+  @media (max-width: 640px) {
+    header { flex-direction: column; align-items: flex-start; gap: 12px; }
+    .logo-block h1 { font-size: 1.8rem; }
+    .form-row { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="logo-block">
+      <h1>課堂<span>管理</span></h1>
+      <p>Class Management System</p>
+    </div>
+    <div class="header-meta">
+      <strong id="current-month-display"></strong>
+      <span id="today-display"></span>
+      <div style="margin-top:10px;display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn btn-ghost btn-sm" onclick="exportData()">⬇ 匯出資料</button>
+        <label class="btn btn-ghost btn-sm" style="cursor:pointer;">⬆ 匯入資料<input type="file" accept=".json" onchange="importData(event)" style="display:none;"></label>
+      </div>
+    </div>
+  </header>
+
+  <!-- Summary Cards -->
+  <div class="summary-row">
+    <div class="card gold">
+      <div class="card-label">本月銷課收入</div>
+      <div class="card-value" id="summary-income">$0</div>
+      <div class="card-sub" id="summary-income-sub">已完成堂數收入</div>
+    </div>
+    <div class="card rust">
+      <div class="card-label">預收賬款</div>
+      <div class="card-value" id="summary-deferred">$0</div>
+      <div class="card-sub" id="summary-deferred-sub">剩餘未使用堂數</div>
+    </div>
+    <div class="card sage">
+      <div class="card-label">本月已銷課堂</div>
+      <div class="card-value" id="summary-sessions">0</div>
+      <div class="card-sub" id="summary-sessions-sub">本月使用堂數</div>
+    </div>
+    <div class="card ink">
+      <div class="card-label">學生人數</div>
+      <div class="card-value" id="summary-students">0</div>
+      <div class="card-sub">已建立學生檔案</div>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('students')">學生管理</div>
+    <div class="tab" onclick="switchTab('income')">收入報表</div>
+    <div class="tab" onclick="switchTab('sessions')">上課記錄</div>
+  </div>
+
+  <!-- Students Tab -->
+  <div class="tab-content active" id="tab-students">
+    <div class="section">
+      <div class="section-header">
+        <div class="section-title"><span class="dot"></span>學生列表</div>
+        <button class="btn btn-primary" onclick="openAddStudent()">＋ 新增學生</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>學生姓名</th>
+              <th>購買堂數</th>
+              <th>單價</th>
+              <th>已用堂數</th>
+              <th>剩餘堂數</th>
+              <th>剩餘進度</th>
+              <th>購買日期</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="students-tbody">
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Income Tab -->
+  <div class="tab-content" id="tab-income">
+    <div class="section">
+      <div class="section-header">
+        <div class="section-title"><span class="dot"></span>收入報表</div>
+        <div class="filter-row">
+          <label style="font-size:0.8rem;color:var(--muted);">月份：</label>
+          <select class="month-select" id="income-month-select" onchange="renderIncome();renderSummary()"></select>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <div id="income-table"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sessions Tab -->
+  <div class="tab-content" id="tab-sessions">
+    <div class="section">
+      <div class="section-header">
+        <div class="section-title"><span class="dot"></span>上課記錄</div>
+        <div class="filter-row">
+          <label style="font-size:0.8rem;color:var(--muted);">學生：</label>
+          <select class="month-select" id="session-student-filter" onchange="renderSessionsLog()">
+            <option value="all">全部學生</option>
+          </select>
+          <label style="font-size:0.8rem;color:var(--muted);">月份：</label>
+          <select class="month-select" id="session-month-filter" onchange="renderSessionsLog()"></select>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>日期</th>
+              <th>學生</th>
+              <th>課堂說明</th>
+              <th>單堂收入</th>
+            </tr>
+          </thead>
+          <tbody id="sessions-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="section" style="margin-top:24px;">
+      <div class="section-header">
+        <div class="section-title"><span class="dot"></span>所有記錄原始資料（除錯用）</div>
+        <button class="btn btn-ghost btn-sm" onclick="toggleDebug()">顯示 / 隱藏</button>
+      </div>
+      <div id="debug-panel" style="display:none;font-family:'DM Mono',monospace;font-size:0.75rem;background:var(--cream);border:1px solid var(--border);border-radius:4px;padding:16px;max-height:320px;overflow-y:auto;line-height:2;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Add/Edit Student Modal -->
+<div class="modal-overlay" id="student-modal">
+  <div class="modal">
+    <h3 id="modal-title">新增學生</h3>
+    <div class="form-row">
+      <div class="form-group">
+        <label>學生姓名</label>
+        <input type="text" id="f-name" placeholder="例：王小明">
+      </div>
+      <div class="form-group">
+        <label>購買日期</label>
+        <input type="date" id="f-date">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>購買堂數</label>
+        <input type="number" id="f-total" placeholder="例：10" min="1">
+      </div>
+      <div class="form-group">
+        <label>每堂單價（$）</label>
+        <input type="number" id="f-price" placeholder="例：500" min="0">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>備註</label>
+      <input type="text" id="f-note" placeholder="選填">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('student-modal')">取消</button>
+      <button class="btn btn-primary" onclick="saveStudent()">儲存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add Session Modal -->
+<div class="modal-overlay" id="session-modal">
+  <div class="modal">
+    <h3 id="session-modal-title">新增上課記錄</h3>
+    <div class="form-group">
+      <label>學生</label>
+      <select id="s-student" onchange="updateSessionInfo()"></select>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>上課日期</label>
+        <input type="date" id="s-date">
+      </div>
+      <div class="form-group">
+        <label>堂數</label>
+        <input type="number" id="s-count" value="1" min="1" onchange="updateSessionInfo()">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>課堂說明</label>
+      <input type="text" id="s-desc" placeholder="例：素描基礎、鋼琴第三課…">
+    </div>
+    <div id="session-info" style="background:var(--cream);border:1px solid var(--border);border-radius:3px;padding:10px 14px;font-size:0.8rem;color:var(--muted);margin-bottom:4px;font-family:'DM Mono',monospace;display:none;"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('session-modal')">取消</button>
+      <button class="btn btn-sage" onclick="saveSession()">記錄上課</button>
+    </div>
+  </div>
+</div>
+
+<!-- Student Detail Modal -->
+<div class="modal-overlay" id="detail-modal">
+  <div class="modal" style="max-width:600px;">
+    <h3 id="detail-name">學生詳情</h3>
+    <div id="detail-content"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('detail-modal')">關閉</button>
+      <button class="btn btn-primary" onclick="openAddSession(currentDetailId)">＋ 新增上課記錄</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ─── Date helpers (timezone-safe) ────────────────────────────────────────────
+  function localDateStr(d) {
+    d = d || new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+  function localMonthStr(d) { return localDateStr(d).slice(0, 7); }
+
+  // ─── State ───────────────────────────────────────────────────────────────────
+  let students = JSON.parse(localStorage.getItem('cms_students') || '[]');
+  let sessions = JSON.parse(localStorage.getItem('cms_sessions') || '[]');
+  let editingStudentId = null;
+  let currentDetailId = null;
+
+  function save() {
+    localStorage.setItem('cms_students', JSON.stringify(students));
+    localStorage.setItem('cms_sessions', JSON.stringify(sessions));
+  }
+
+  function id() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+
+  // ─── Init ─────────────────────────────────────────────────────────────────────
+  window.addEventListener('DOMContentLoaded', () => {
+    const now = new Date();
+    document.getElementById('current-month-display').textContent = 
+      now.getFullYear() + ' 年 ' + (now.getMonth()+1) + ' 月';
+    document.getElementById('today-display').textContent =
+      now.toLocaleDateString('zh-TW', { weekday:'long', month:'long', day:'numeric' });
+
+    populateMonthSelects();
+    render();
+  });
+
+  function populateMonthSelects() {
+    const now = new Date();
+    const months = [];
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      months.push({ value: localMonthStr(d), label: d.getFullYear() + '年' + (d.getMonth()+1) + '月' });
+    }
+
+    ['income-month-select', 'session-month-filter'].forEach(id => {
+      const sel = document.getElementById(id);
+      sel.innerHTML = months.map(m => `<option value="${m.value}">${m.label}</option>`).join('');
+    });
+  }
+
+  // ─── Tabs ─────────────────────────────────────────────────────────────────────
+  function switchTab(name) {
+    document.querySelectorAll('.tab').forEach((t,i) => {
+      const names = ['students','income','sessions'];
+      t.classList.toggle('active', names[i] === name);
+    });
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    document.getElementById('tab-' + name).classList.add('active');
+    if (name === 'income') renderIncome();
+    if (name === 'sessions') renderSessionsLog();
+  }
+
+  // ─── Render ───────────────────────────────────────────────────────────────────
+  function render() {
+    renderSummary();
+    renderStudents();
+    renderIncome();
+    renderSessionsLog();
+    updateSessionStudentSelect();
+  }
+
+  function renderSummary() {
+    // 與收入報表月份選擇器同步，確保數字一致
+    const sel = document.getElementById('income-month-select');
+    const currentMonth = sel ? sel.value : localMonthStr();
+
+    const monthSessions = sessions.filter(s => s.date.slice(0, 7) === currentMonth);
+    let income = 0;
+    monthSessions.forEach(s => {
+      const st = students.find(x => x.id === s.studentId);
+      if (st) income += st.price * (s.count || 1);
+    });
+    const monthSessionCount = monthSessions.reduce((a, s) => a + (s.count || 1), 0);
+
+    // 預收賬款 = 所有學生剩餘堂數 × 單價（不分月）
+    let deferred = 0;
+    students.forEach(st => {
+      const used = sessions.filter(s => s.studentId === st.id).reduce((a, s) => a + (s.count || 1), 0);
+      deferred += Math.max(0, st.total - used) * st.price;
+    });
+
+    const [y, m] = currentMonth.split('-');
+    document.getElementById('summary-income').textContent = '$' + income.toLocaleString();
+    document.getElementById('summary-income-sub').textContent = y + '年' + parseInt(m) + '月・' + monthSessionCount + ' 堂';
+    document.getElementById('summary-deferred').textContent = '$' + deferred.toLocaleString();
+    document.getElementById('summary-sessions').textContent = monthSessionCount;
+    document.getElementById('summary-students').textContent = students.length;
+  }
+
+  function renderStudents() {
+    const tbody = document.getElementById('students-tbody');
+    if (students.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state"><div class="icon">📋</div>尚無學生資料，點擊「新增學生」開始建立</div></td></tr>`;
+      return;
+    }
+    tbody.innerHTML = students.map(st => {
+      const used = sessions.filter(s => s.studentId === st.id).reduce((a,s) => a+(s.count||1), 0);
+      const remaining = st.total - used;
+      const pct = Math.round((used / st.total) * 100);
+      const fillColor = remaining <= 2 ? 'var(--rust)' : remaining <= 5 ? 'var(--gold)' : 'var(--sage)';
+      const tag = remaining <= 0 
+        ? `<span class="tag tag-rust">已用完</span>`
+        : remaining <= 2 
+        ? `<span class="tag tag-rust">⚠ ${remaining} 堂</span>`
+        : remaining <= 5 
+        ? `<span class="tag tag-gold">${remaining} 堂</span>`
+        : `<span class="tag tag-sage">${remaining} 堂</span>`;
+
+      return `<tr>
+        <td><span class="student-name">${st.name}</span></td>
+        <td>${st.total} 堂</td>
+        <td><span style="font-family:'DM Mono',monospace;">$${st.price.toLocaleString()}</span></td>
+        <td>${used} 堂</td>
+        <td class="${remaining <= 2 ? 'low-balance' : ''}">${tag}</td>
+        <td>
+          <div class="progress-bar-wrap">
+            <div class="progress-bar"><div class="progress-bar-fill" style="width:${pct}%;background:${fillColor}"></div></div>
+            <span class="progress-val">${pct}%</span>
+          </div>
+        </td>
+        <td><span style="font-family:'DM Mono',monospace;font-size:0.78rem;color:var(--muted);">${st.date||'—'}</span></td>
+        <td>
+          <div class="action-group">
+            <button class="btn btn-ghost btn-sm" onclick="openDetail('${st.id}')">詳情</button>
+            <button class="btn btn-ghost btn-sm" onclick="openAddSession('${st.id}')">上課</button>
+            <button class="btn btn-ghost btn-sm" onclick="editStudent('${st.id}')">編輯</button>
+          </div>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  function renderIncome() {
+    const month = document.getElementById('income-month-select').value;
+    const monthSessions = sessions.filter(s => s.date.startsWith(month));
+
+    const byStudent = {};
+    students.forEach(st => { byStudent[st.id] = { name: st.name, price: st.price, count: 0 }; });
+    monthSessions.forEach(s => {
+      if (byStudent[s.studentId]) byStudent[s.studentId].count += (s.count||1);
+    });
+
+    const rows = Object.values(byStudent).filter(x => x.count > 0);
+    const totalIncome = rows.reduce((a,r) => a + r.count * r.price, 0);
+
+    let html = '';
+    if (rows.length === 0) {
+      html = `<div class="empty-state"><div class="icon">📊</div>本月尚無上課記錄</div>`;
+    } else {
+      html = rows.map(r => `
+        <div class="income-row">
+          <div>
+            <div style="font-weight:600;">${r.name}</div>
+            <div class="income-label">${r.count} 堂 × $${r.price.toLocaleString()}</div>
+          </div>
+          <div style="font-family:'DM Mono',monospace;font-weight:600;color:var(--sage);">$${(r.count * r.price).toLocaleString()}</div>
+        </div>
+      `).join('');
+      html += `
+        <div class="income-row total">
+          <div>本月銷課收入合計</div>
+          <div style="font-family:'DM Mono',monospace;color:var(--gold);font-size:1.1rem;">$${totalIncome.toLocaleString()}</div>
+        </div>
+      `;
+
+      // Deferred
+      let deferred = 0;
+      students.forEach(st => {
+        const used = sessions.filter(s => s.studentId === st.id).reduce((a,s) => a+(s.count||1), 0);
+        deferred += Math.max(0, st.total - used) * st.price;
+      });
+      html += `
+        <div class="income-row" style="background:var(--cream);">
+          <div>
+            <div style="font-weight:600;">預收賬款（全部剩餘堂數）</div>
+            <div class="income-label">尚未使用之預付款項</div>
+          </div>
+          <div style="font-family:'DM Mono',monospace;font-weight:600;color:var(--rust);">$${deferred.toLocaleString()}</div>
+        </div>
+      `;
+    }
+
+    document.getElementById('income-table').innerHTML = html;
+  }
+
+  function renderSessionsLog() {
+    const studentFilter = document.getElementById('session-student-filter').value;
+    const monthFilter = document.getElementById('session-month-filter').value;
+
+    const filtered = sessions.filter(s => {
+      const matchStudent = studentFilter === 'all' || s.studentId === studentFilter;
+      const matchMonth = s.date.startsWith(monthFilter);
+      return matchStudent && matchMonth;
+    }).sort((a,b) => b.date.localeCompare(a.date));
+
+    const tbody = document.getElementById('sessions-tbody');
+    if (filtered.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="4"><div class="empty-state"><div class="icon">📅</div>此篩選條件無上課記錄</div></td></tr>`;
+      return;
+    }
+    tbody.innerHTML = filtered.map(s => {
+      const st = students.find(x => x.id === s.studentId);
+      const income = st ? st.price * (s.count||1) : 0;
+      return `<tr>
+        <td><span style="font-family:'DM Mono',monospace;">${s.date}</span></td>
+        <td><strong>${st ? st.name : '已刪除'}</strong></td>
+        <td>${s.desc || '—'} ${s.count>1 ? `<span class="tag tag-gray">${s.count}堂</span>` : ''}</td>
+        <td style="font-family:'DM Mono',monospace;color:var(--sage);">$${income.toLocaleString()}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  function updateSessionStudentSelect() {
+    const sel = document.getElementById('session-student-filter');
+    const cur = sel.value;
+    sel.innerHTML = `<option value="all">全部學生</option>` +
+      students.map(st => `<option value="${st.id}">${st.name}</option>`).join('');
+    if (cur) sel.value = cur;
+  }
+
+  function toggleDebug() {
+    const panel = document.getElementById('debug-panel');
+    if (panel.style.display === 'none') {
+      // 顯示所有 sessions 原始資料，方便核對日期
+      const lines = sessions
+        .slice().sort((a,b) => b.date.localeCompare(a.date))
+        .map(s => {
+          const st = students.find(x => x.id === s.studentId);
+          const name = st ? st.name : '(已刪除)';
+          const income = st ? st.price * (s.count||1) : 0;
+          return s.date + '  ' + name.padEnd(12) + (s.count||1) + '堂  $' + income + '  ' + (s.desc||'');
+        });
+      panel.innerHTML = lines.length
+        ? lines.map(l => `<div style="border-bottom:1px solid var(--border);padding:4px 0;">${l}</div>`).join('')
+        : '<div style="color:var(--muted);">無資料</div>';
+      panel.style.display = 'block';
+    } else {
+      panel.style.display = 'none';
+    }
+  }
+
+  // ─── Student CRUD ─────────────────────────────────────────────────────────────
+  function openAddStudent() {
+    editingStudentId = null;
+    document.getElementById('modal-title').textContent = '新增學生';
+    ['f-name','f-total','f-price','f-note'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('f-date').value = localDateStr();
+    openModal('student-modal');
+  }
+
+  function editStudent(sid) {
+    const st = students.find(s => s.id === sid);
+    if (!st) return;
+    editingStudentId = sid;
+    document.getElementById('modal-title').textContent = '編輯學生';
+    document.getElementById('f-name').value = st.name;
+    document.getElementById('f-total').value = st.total;
+    document.getElementById('f-price').value = st.price;
+    document.getElementById('f-date').value = st.date || '';
+    document.getElementById('f-note').value = st.note || '';
+    openModal('student-modal');
+  }
+
+  function saveStudent() {
+    const name = document.getElementById('f-name').value.trim();
+    const total = parseInt(document.getElementById('f-total').value);
+    const price = parseFloat(document.getElementById('f-price').value);
+    const date = document.getElementById('f-date').value;
+    const note = document.getElementById('f-note').value.trim();
+
+    if (!name) return alert('請輸入學生姓名');
+    if (!total || total < 1) return alert('請輸入有效購買堂數');
+    if (price === '' || isNaN(price)) return alert('請輸入單價');
+
+    if (editingStudentId) {
+      const idx = students.findIndex(s => s.id === editingStudentId);
+      if (idx >= 0) students[idx] = { ...students[idx], name, total, price, date, note };
+    } else {
+      students.push({ id: id(), name, total, price, date, note });
+    }
+
+    save();
+    render();
+    updateSessionStudentSelect();
+    closeModal('student-modal');
+  }
+
+  // ─── Session CRUD ─────────────────────────────────────────────────────────────
+  function openAddSession(sid) {
+    closeModal('detail-modal');
+    const sel = document.getElementById('s-student');
+    sel.innerHTML = students.map(st => `<option value="${st.id}">${st.name}</option>`).join('');
+    if (sid) sel.value = sid;
+    document.getElementById('s-date').value = localDateStr();
+    document.getElementById('s-count').value = 1;
+    document.getElementById('s-desc').value = '';
+    updateSessionInfo();
+    openModal('session-modal');
+  }
+
+  function updateSessionInfo() {
+    const sid = document.getElementById('s-student').value;
+    const count = parseInt(document.getElementById('s-count').value) || 1;
+    const st = students.find(s => s.id === sid);
+    const info = document.getElementById('session-info');
+    if (!st) { info.style.display='none'; return; }
+    const used = sessions.filter(s => s.studentId === sid).reduce((a,s)=>a+(s.count||1),0);
+    const remaining = st.total - used;
+    info.style.display = 'block';
+    info.innerHTML = `剩餘堂數：${remaining} 堂　本次記錄：${count} 堂　記錄後剩餘：${remaining - count} 堂　本次收入：$${(st.price * count).toLocaleString()}`;
+    info.style.color = remaining - count < 0 ? 'var(--rust)' : 'var(--muted)';
+  }
+
+  function saveSession() {
+    const studentId = document.getElementById('s-student').value;
+    const date = document.getElementById('s-date').value;
+    const count = parseInt(document.getElementById('s-count').value) || 1;
+    const desc = document.getElementById('s-desc').value.trim();
+
+    if (!studentId) return alert('請選擇學生');
+    if (!date) return alert('請選擇日期');
+
+    const st = students.find(s => s.id === studentId);
+    const used = sessions.filter(s => s.studentId === studentId).reduce((a,s)=>a+(s.count||1),0);
+    if (used + count > st.total) {
+      if (!confirm(`此學生剩餘堂數不足（剩餘 ${st.total - used} 堂），確定要繼續記錄？`)) return;
+    }
+
+    sessions.push({ id: id(), studentId, date, count, desc });
+    save();
+    render();
+    closeModal('session-modal');
+  }
+
+  // ─── Detail ───────────────────────────────────────────────────────────────────
+  function openDetail(sid) {
+    currentDetailId = sid;
+    const st = students.find(s => s.id === sid);
+    if (!st) return;
+    document.getElementById('detail-name').textContent = st.name + ' 的學習記錄';
+
+    const used = sessions.filter(s => s.studentId === sid).reduce((a,s)=>a+(s.count||1),0);
+    const remaining = st.total - used;
+    const totalPaid = st.total * st.price;
+    const earned = used * st.price;
+    const deferred = remaining * st.price;
+
+    const stSessions = sessions.filter(s => s.studentId === sid).sort((a,b)=>b.date.localeCompare(a.date));
+
+    document.getElementById('detail-content').innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;">
+        <div class="card gold" style="padding:12px 16px;">
+          <div class="card-label">購買堂數</div>
+          <div class="card-value" style="font-size:1.6rem;">${st.total}</div>
+        </div>
+        <div class="card sage" style="padding:12px 16px;">
+          <div class="card-label">已用堂數</div>
+          <div class="card-value" style="font-size:1.6rem;">${used}</div>
+        </div>
+        <div class="card ${remaining<=2?'rust':'ink'}" style="padding:12px 16px;">
+          <div class="card-label">剩餘堂數</div>
+          <div class="card-value" style="font-size:1.6rem;">${remaining}</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;font-size:0.82rem;">
+        <div style="padding:8px 12px;background:var(--cream);border:1px solid var(--border);border-radius:3px;">
+          <div class="income-label">單堂價格</div>
+          <div style="font-family:'DM Mono',monospace;font-weight:600;">$${st.price.toLocaleString()}</div>
+        </div>
+        <div style="padding:8px 12px;background:var(--cream);border:1px solid var(--border);border-radius:3px;">
+          <div class="income-label">購買金額</div>
+          <div style="font-family:'DM Mono',monospace;font-weight:600;">$${totalPaid.toLocaleString()}</div>
+        </div>
+        <div style="padding:8px 12px;background:var(--cream);border:1px solid var(--border);border-radius:3px;">
+          <div class="income-label">已銷課收入</div>
+          <div style="font-family:'DM Mono',monospace;font-weight:600;color:var(--sage);">$${earned.toLocaleString()}</div>
+        </div>
+        <div style="padding:8px 12px;background:var(--cream);border:1px solid var(--border);border-radius:3px;">
+          <div class="income-label">預收賬款</div>
+          <div style="font-family:'DM Mono',monospace;font-weight:600;color:var(--rust);">$${deferred.toLocaleString()}</div>
+        </div>
+      </div>
+      <div style="font-size:0.8rem;font-weight:600;margin-bottom:8px;letter-spacing:0.06em;color:var(--muted);">上課記錄（${stSessions.length} 次）</div>
+      <div class="detail-sessions">
+        ${stSessions.length === 0 
+          ? '<div class="empty-state" style="padding:24px;">尚無上課記錄</div>'
+          : stSessions.map(s => `
+            <div class="session-item">
+              <div>
+                <span class="session-date">${s.date}</span>
+                <span style="margin-left:10px;">${s.desc || '（未填說明）'}</span>
+                ${s.count>1 ? `<span class="tag tag-gray" style="margin-left:6px;">${s.count}堂</span>` : ''}
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="font-family:'DM Mono',monospace;color:var(--sage);font-size:0.78rem;">$${(st.price*(s.count||1)).toLocaleString()}</span>
+                <button class="btn btn-danger btn-sm" onclick="deleteSession('${s.id}')">刪除</button>
+              </div>
+            </div>
+          `).join('')
+        }
+      </div>
+      ${st.note ? `<div style="margin-top:12px;padding:8px 12px;background:var(--cream);border-left:3px solid var(--gold);font-size:0.8rem;color:var(--muted);">備註：${st.note}</div>` : ''}
+    `;
+
+    openModal('detail-modal');
+  }
+
+  function deleteSession(sessId) {
+    if (!confirm('確定刪除此上課記錄？')) return;
+    sessions = sessions.filter(s => s.id !== sessId);
+    save();
+    render();
+    if (currentDetailId) openDetail(currentDetailId);
+  }
+
+  // ─── Export / Import ──────────────────────────────────────────────────────────
+  function exportData() {
+    const data = { students, sessions, exportedAt: new Date().toISOString() };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    const d = localDateStr();
+    a.download = 'class-manager-' + d + '.json';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  function importData(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        const data = JSON.parse(e.target.result);
+        if (!Array.isArray(data.students) || !Array.isArray(data.sessions)) {
+          alert('檔案格式不正確，請使用本系統匯出的 JSON 檔案');
+          return;
+        }
+        if (!confirm('匯入後會覆蓋目前所有資料，確定繼續？')) return;
+        students = data.students;
+        sessions = data.sessions;
+        save();
+        render();
+        updateSessionStudentSelect();
+        alert('✅ 匯入成功！共 ' + students.length + ' 位學生、' + sessions.length + ' 筆上課記錄');
+      } catch(err) {
+        alert('匯入失敗：檔案損壞或格式錯誤');
+      }
+    };
+    reader.readAsText(file);
+    event.target.value = '';
+  }
+
+  // ─── Modal helpers ────────────────────────────────────────────────────────────
+  function openModal(id) { document.getElementById(id).classList.add('active'); }
+  function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+
+  document.querySelectorAll('.modal-overlay').forEach(el => {
+    el.addEventListener('click', e => { if (e.target === el) el.classList.remove('active'); });
+  });
+</script>
+</body>
+</html>
