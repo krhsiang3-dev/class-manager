@@ -3,8 +3,91 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>課堂管理系統</title>
+<title>公司金流管理</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;600;700&family=DM+Mono:wght@400;500&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getFirestore, doc, getDoc, setDoc, onSnapshot }
+    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence }
+    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyCZuavcmsxRdtZF11kpitKYw_zXNda_VHw",
+    authDomain: "evoke-85ca9.firebaseapp.com",
+    projectId: "evoke-85ca9",
+    storageBucket: "evoke-85ca9.firebasestorage.app",
+    messagingSenderId: "409858246034",
+    appId: "1:409858246034:web:55821e66b238401b87ad4b"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+  const auth = getAuth(app);
+  const docRef = doc(db, "cms", "main");
+
+  // 登入狀態持久化（關閉瀏覽器再打開仍記住）
+  await setPersistence(auth, browserLocalPersistence);
+
+  window.__auth = {
+    async login(email, password) {
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+        return { ok: true };
+      } catch(e) {
+        return { ok: false, error: e.code || e.message };
+      }
+    },
+    async logout() {
+      await signOut(auth);
+      location.reload();
+    },
+    currentUser: () => auth.currentUser
+  };
+
+  window.__cloud = {
+    async load() {
+      try {
+        const snap = await getDoc(docRef);
+        if (snap.exists()) return snap.data();
+        return null;
+      } catch(e) {
+        console.error('雲端讀取失敗', e);
+        return null;
+      }
+    },
+    async save(data) {
+      try {
+        await setDoc(docRef, { ...data, updatedAt: Date.now() });
+        return true;
+      } catch(e) {
+        console.error('雲端寫入失敗', e);
+        return false;
+      }
+    },
+    watch(callback) {
+      return onSnapshot(docRef, snap => {
+        if (snap.exists()) callback(snap.data());
+      }, err => console.error('雲端同步監聽錯誤', err));
+    }
+  };
+
+  // 監聽登入狀態變化
+  onAuthStateChanged(auth, user => {
+    const gate = document.getElementById('login-gate');
+    const appEl = document.querySelector('.app');
+    if (user) {
+      if (gate) gate.style.display = 'none';
+      if (appEl) appEl.style.display = '';
+      window.dispatchEvent(new CustomEvent('auth-ready', { detail: { user } }));
+    } else {
+      if (gate) gate.style.display = 'flex';
+      if (appEl) appEl.style.display = 'none';
+    }
+  });
+
+  window.dispatchEvent(new Event('cloud-ready'));
+</script>
 <style>
   :root {
     --ink: #1a1410;
@@ -457,33 +540,121 @@
 </style>
 </head>
 <body>
-<div class="app">
+
+<!-- Login Gate -->
+<div id="login-gate" style="display:none;position:fixed;inset:0;background:var(--paper);z-index:9999;align-items:center;justify-content:center;padding:20px;">
+  <div style="background:var(--cream);border:1px solid var(--border);border-radius:6px;padding:36px 32px;max-width:380px;width:100%;box-shadow:0 20px 60px rgba(26,20,16,0.15);">
+    <div style="text-align:center;margin-bottom:28px;">
+      <div style="font-family:'Playfair Display',serif;font-size:1.8rem;color:var(--ink);letter-spacing:-0.02em;line-height:1;">
+        公司<span style="color:var(--gold);">金流管理</span>
+      </div>
+      <div style="font-family:'DM Mono',monospace;font-size:0.7rem;color:var(--muted);letter-spacing:0.15em;text-transform:uppercase;margin-top:6px;">Sign In</div>
+    </div>
+    <div class="form-group">
+      <label>Email</label>
+      <input type="email" id="login-email" placeholder="your@email.com" autocomplete="username">
+    </div>
+    <div class="form-group">
+      <label>密碼</label>
+      <input type="password" id="login-password" placeholder="••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <div id="login-error" style="display:none;color:var(--rust);font-size:0.8rem;margin-bottom:12px;padding:8px 12px;background:#f5ddd8;border-radius:3px;"></div>
+    <button class="btn btn-primary" onclick="doLogin()" style="width:100%;padding:12px;">登入</button>
+    <div style="text-align:center;margin-top:16px;font-family:'DM Mono',monospace;font-size:0.68rem;color:var(--muted);">
+      資料已加密儲存於雲端 · 僅限授權使用者存取
+    </div>
+  </div>
+</div>
+
+<div class="app" style="display:none;">
   <header>
     <div class="logo-block">
-      <h1>課堂<span>管理</span></h1>
+      <h1>公司<span>金流管理</span></h1>
       <p>Class Management System</p>
     </div>
     <div class="header-meta">
       <strong id="current-month-display"></strong>
       <span id="today-display"></span>
-      <div style="margin-top:10px;display:flex;gap:8px;justify-content:flex-end;">
-        <button class="btn btn-ghost btn-sm" onclick="exportData()">⬇ 匯出資料</button>
-        <label class="btn btn-ghost btn-sm" style="cursor:pointer;">⬆ 匯入資料<input type="file" accept=".json" onchange="importData(event)" style="display:none;"></label>
+      <div style="margin-top:6px;font-family:'DM Mono',monospace;font-size:0.7rem;color:var(--muted);">
+        <span id="sync-status">☁ 連線中…</span>
+      </div>
+      <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">
+        <button class="btn btn-ghost btn-sm" onclick="exportData()">⬇ 匯出</button>
+        <label class="btn btn-ghost btn-sm" style="cursor:pointer;">⬆ 匯入<input type="file" accept=".json" onchange="importData(event)" style="display:none;"></label>
+        <button class="btn btn-ghost btn-sm" onclick="doLogout()">登出</button>
       </div>
     </div>
   </header>
 
+  <!-- Expense Cards -->
+  <div style="margin-bottom:8px;" id="expense-section">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+      <div style="font-size:0.7rem;letter-spacing:0.12em;text-transform:uppercase;font-family:'DM Mono',monospace;color:var(--muted);">每月固定支出</div>
+      <div style="display:flex;gap:6px;">
+        <button class="btn btn-ghost btn-sm" onclick="openExpenseModal()" style="font-size:0.7rem;padding:3px 10px;">＋ 其他支出</button>
+        <button class="btn btn-ghost btn-sm" onclick="toggleExpenseSection()" id="expense-toggle-btn" style="font-size:0.7rem;padding:3px 10px;">隱藏</button>
+      </div>
+    </div>
+    <div id="expense-cards">
+      <div class="summary-row" style="margin-bottom:6px;">
+        <div class="card" style="border-top:3px solid #c0392b;">
+          <div class="card-label">房租</div>
+          <div class="card-value" style="color:#c0392b;">$36,000</div>
+          <div class="card-sub">每月固定</div>
+        </div>
+        <div class="card" style="border-top:3px solid #e67e22;">
+          <div class="card-label">扣繳稅金 10%</div>
+          <div class="card-value" style="color:#e67e22;">$4,096</div>
+          <div class="card-sub">每期</div>
+        </div>
+        <div class="card" style="border-top:3px solid #e67e22;">
+          <div class="card-label">二代健保 2.11%</div>
+          <div class="card-value" style="color:#e67e22;">$864</div>
+          <div class="card-sub">每期</div>
+        </div>
+        <div class="card" style="border-top:3px solid #c0392b;">
+          <div class="card-label">管理費</div>
+          <div class="card-value" style="color:#c0392b;">$3,186</div>
+          <div class="card-sub">每月固定</div>
+        </div>
+        <div class="card" style="border-top:3px solid #922b21;background:var(--cream);">
+          <div class="card-label">月固定支出小計</div>
+          <div class="card-value" id="fixed-subtotal" style="color:#922b21;">$43,146</div>
+          <div class="card-sub">房租＋稅金＋管理費</div>
+        </div>
+
+      </div>
+      <!-- 其他支出動態區塊 -->
+      <div id="extra-expense-cards" class="summary-row" style="margin-bottom:0;"></div>
+    </div>
+  </div>
+
   <!-- Summary Cards -->
   <div class="summary-row">
+    <div class="card sage">
+      <div class="card-label">本月淨利</div>
+      <div class="card-value" id="banner-profit" style="color:var(--sage);">—</div>
+      <div class="card-sub" id="profit-sub">銷課收入 − 總支出</div>
+    </div>
     <div class="card gold">
       <div class="card-label">本月銷課收入</div>
       <div class="card-value" id="summary-income">$0</div>
       <div class="card-sub" id="summary-income-sub">已完成堂數收入</div>
     </div>
     <div class="card rust">
-      <div class="card-label">預收賬款</div>
+      <div class="card-label">累計預收賬款</div>
       <div class="card-value" id="summary-deferred">$0</div>
-      <div class="card-sub" id="summary-deferred-sub">剩餘未使用堂數</div>
+      <div class="card-sub" id="summary-deferred-sub">歷史購買總金額</div>
+    </div>
+    <div class="card rust">
+      <div class="card-label">剩餘預收賬款</div>
+      <div class="card-value" id="summary-remaining-deferred">$0</div>
+      <div class="card-sub" id="summary-remaining-deferred-sub">未銷課堂數金額</div>
+    </div>
+    <div class="card gold">
+      <div class="card-label">本月新增預收賬款</div>
+      <div class="card-value" id="summary-new-deferred">$0</div>
+      <div class="card-sub" id="summary-new-deferred-sub">本月購買堂數金額</div>
     </div>
     <div class="card sage">
       <div class="card-label">本月已銷課堂</div>
@@ -517,9 +688,14 @@
             <tr>
               <th>學生姓名</th>
               <th>購買堂數</th>
-              <th>單價</th>
+              <th style="cursor:pointer;user-select:none;white-space:nowrap;" onclick="togglePriceSort()">
+                單價 <span id="price-sort-icon" style="opacity:0.6;font-size:0.8em;">⇅</span>
+                <span id="price-col-toggle" onclick="event.stopPropagation();togglePriceCol()" style="margin-left:6px;opacity:0.5;font-size:0.75em;font-weight:400;cursor:pointer;" title="顯示/隱藏">👁</span>
+              </th>
               <th>已用堂數</th>
-              <th>剩餘堂數</th>
+              <th style="cursor:pointer;user-select:none;white-space:nowrap;" onclick="toggleRemainingSort()">
+                剩餘堂數 <span id="remaining-sort-icon" style="opacity:0.6;font-size:0.8em;">⇅</span>
+              </th>
               <th>剩餘進度</th>
               <th>購買日期</th>
               <th>操作</th>
@@ -586,33 +762,85 @@
   </div>
 </div>
 
+<!-- Other Expense Modal -->
+<div class="modal-overlay" id="expense-modal">
+  <div class="modal" style="max-width:420px;">
+    <h3 id="expense-modal-title">新增其他支出</h3>
+    <div class="form-group">
+      <label>支出名稱</label>
+      <input type="text" id="ex-name" placeholder="例：AED 租金、訂閱費…">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>金額</label>
+        <input type="number" id="ex-amount" placeholder="例：1400" min="0">
+      </div>
+      <div class="form-group">
+        <label>幣別／備註</label>
+        <input type="text" id="ex-currency" placeholder="例：AED、TWD、每季…">
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('expense-modal')">取消</button>
+      <button class="btn btn-primary" onclick="saveExpense()">儲存</button>
+    </div>
+  </div>
+</div>
+
 <!-- Add/Edit Student Modal -->
 <div class="modal-overlay" id="student-modal">
   <div class="modal">
     <h3 id="modal-title">新增學生</h3>
-    <div class="form-row">
-      <div class="form-group">
-        <label>學生姓名</label>
-        <input type="text" id="f-name" placeholder="例：王小明">
-      </div>
-      <div class="form-group">
-        <label>購買日期</label>
-        <input type="date" id="f-date">
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>購買堂數</label>
-        <input type="number" id="f-total" placeholder="例：10" min="1">
-      </div>
-      <div class="form-group">
-        <label>每堂單價（$）</label>
-        <input type="number" id="f-price" placeholder="例：500" min="0">
-      </div>
+    <div class="form-group">
+      <label>學生姓名</label>
+      <input type="text" id="f-name" placeholder="例：王小明">
     </div>
     <div class="form-group">
-      <label>備註</label>
-      <input type="text" id="f-note" placeholder="選填">
+      <label>付費方式</label>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-top:6px;">
+        <label onclick="toggleStudentType()" style="display:flex;align-items:center;gap:12px;cursor:pointer;padding:12px 16px;border:1.5px solid var(--ink);border-radius:3px;background:var(--cream);transition:all 0.15s;width:100%;" id="type-label-package">
+          <input type="radio" name="f-type" value="package" checked style="accent-color:var(--ink);flex-shrink:0;width:16px;height:16px;">
+          <div style="min-width:0;">
+            <div style="font-size:0.88rem;font-weight:600;color:var(--ink);letter-spacing:0;text-transform:none;white-space:nowrap;">購買堂數（預付）</div>
+            <div style="font-size:0.72rem;color:var(--muted);margin-top:2px;letter-spacing:0;text-transform:none;font-family:'DM Mono',monospace;white-space:nowrap;">先付款，追蹤剩餘堂數與預收賬款</div>
+          </div>
+        </label>
+        <label onclick="toggleStudentType()" style="display:flex;align-items:center;gap:12px;cursor:pointer;padding:12px 16px;border:1.5px solid var(--border);border-radius:3px;background:var(--cream);transition:all 0.15s;width:100%;" id="type-label-persession">
+          <input type="radio" name="f-type" value="per_session" style="accent-color:var(--ink);flex-shrink:0;width:16px;height:16px;">
+          <div style="min-width:0;">
+            <div style="font-size:0.88rem;font-weight:600;color:var(--ink);letter-spacing:0;text-transform:none;white-space:nowrap;">單堂付費</div>
+            <div style="font-size:0.72rem;color:var(--muted);margin-top:2px;letter-spacing:0;text-transform:none;font-family:'DM Mono',monospace;white-space:nowrap;">每次上課各自收費，不預收</div>
+          </div>
+        </label>
+      </div>
+    </div>
+    <div id="f-package-fields">
+      <div class="form-row">
+        <div class="form-group">
+          <label>購買堂數</label>
+          <input type="number" id="f-total" placeholder="例：10" min="1">
+        </div>
+        <div class="form-group">
+          <label>每堂單價（$）</label>
+          <input type="number" id="f-price" placeholder="例：500" min="0">
+        </div>
+      </div>
+    </div>
+    <div id="f-persession-fields" style="display:none;">
+      <div class="form-group">
+        <label>每堂收費（$）</label>
+        <input type="number" id="f-price-ps" placeholder="例：800" min="0">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>加入日期</label>
+        <input type="date" id="f-date">
+      </div>
+      <div class="form-group">
+        <label>備註</label>
+        <input type="text" id="f-note" placeholder="選填">
+      </div>
     </div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeModal('student-modal')">取消</button>
@@ -677,27 +905,151 @@
   // ─── State ───────────────────────────────────────────────────────────────────
   let students = JSON.parse(localStorage.getItem('cms_students') || '[]');
   let sessions = JSON.parse(localStorage.getItem('cms_sessions') || '[]');
+  let extraExpenses = JSON.parse(localStorage.getItem('cms_extra_expenses') || '[]');
   let editingStudentId = null;
   let currentDetailId = null;
+  let priceSort = null;       // null | 'asc' | 'desc'
+  let remainingSort = null;   // null | 'asc' | 'desc'
+  let priceColHidden = false;
+
+  let saveTimer = null;
+  let isApplyingRemote = false;
+
+  function setSyncStatus(text, color) {
+    const el = document.getElementById('sync-status');
+    if (!el) return;
+    el.textContent = text;
+    el.style.color = color || 'var(--muted)';
+  }
+
+  // 顯示已登入的帳號
+  window.addEventListener('auth-ready', e => {
+    const user = e.detail && e.detail.user;
+    if (user) {
+      const el = document.getElementById('sync-status');
+      if (el) el.innerHTML = '☁ 已登入 · <span style="font-family:\'DM Mono\',monospace;">' + user.email + '</span>';
+    }
+  });
 
   function save() {
+    // 先寫本機（離線也不丟資料）
     localStorage.setItem('cms_students', JSON.stringify(students));
     localStorage.setItem('cms_sessions', JSON.stringify(sessions));
+    localStorage.setItem('cms_extra_expenses', JSON.stringify(extraExpenses));
+    // 如果是從遠端同步過來的變更，不要再寫回去（避免無限循環）
+    if (isApplyingRemote) return;
+    // 防抖：500ms 內的多次儲存合併為一次上傳
+    clearTimeout(saveTimer);
+    setSyncStatus('☁ 儲存中…', 'var(--gold)');
+    saveTimer = setTimeout(async () => {
+      if (!window.__cloud) { setSyncStatus('⚠ 未連線（僅存本機）', 'var(--rust)'); return; }
+      const ok = await window.__cloud.save({ students, sessions, extraExpenses });
+      setSyncStatus(ok ? '☁ 已同步' : '⚠ 同步失敗', ok ? 'var(--sage)' : 'var(--rust)');
+    }, 500);
   }
 
   function id() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 
   // ─── Init ─────────────────────────────────────────────────────────────────────
+  async function initCloud() {
+    if (!window.__cloud) {
+      setSyncStatus('⚠ 未連線（僅存本機）', 'var(--rust)');
+      return;
+    }
+    setSyncStatus('☁ 讀取雲端…', 'var(--gold)');
+    const cloudData = await window.__cloud.load();
+    if (cloudData) {
+      isApplyingRemote = true;
+      students = cloudData.students || [];
+      sessions = cloudData.sessions || [];
+      extraExpenses = cloudData.extraExpenses || [];
+      localStorage.setItem('cms_students', JSON.stringify(students));
+      localStorage.setItem('cms_sessions', JSON.stringify(sessions));
+      localStorage.setItem('cms_extra_expenses', JSON.stringify(extraExpenses));
+      isApplyingRemote = false;
+      render();
+      updateSessionStudentSelect();
+      setSyncStatus('☁ 已同步', 'var(--sage)');
+    } else {
+      // 雲端無資料 → 把本機目前資料傳上去
+      const hasLocal = students.length || sessions.length || extraExpenses.length;
+      if (hasLocal) {
+        const ok = await window.__cloud.save({ students, sessions, extraExpenses });
+        setSyncStatus(ok ? '☁ 已同步（首次上傳）' : '⚠ 同步失敗', ok ? 'var(--sage)' : 'var(--rust)');
+      } else {
+        setSyncStatus('☁ 已連線（無資料）', 'var(--sage)');
+      }
+    }
+
+    // 監聽其他裝置的變更，自動更新
+    window.__cloud.watch(data => {
+      if (!data) return;
+      isApplyingRemote = true;
+      students = data.students || [];
+      sessions = data.sessions || [];
+      extraExpenses = data.extraExpenses || [];
+      localStorage.setItem('cms_students', JSON.stringify(students));
+      localStorage.setItem('cms_sessions', JSON.stringify(sessions));
+      localStorage.setItem('cms_extra_expenses', JSON.stringify(extraExpenses));
+      isApplyingRemote = false;
+      render();
+      updateSessionStudentSelect();
+      setSyncStatus('☁ 已同步', 'var(--sage)');
+    });
+  }
+
   window.addEventListener('DOMContentLoaded', () => {
     const now = new Date();
-    document.getElementById('current-month-display').textContent = 
+    document.getElementById('current-month-display').textContent =
       now.getFullYear() + ' 年 ' + (now.getMonth()+1) + ' 月';
     document.getElementById('today-display').textContent =
       now.toLocaleDateString('zh-TW', { weekday:'long', month:'long', day:'numeric' });
 
     populateMonthSelects();
     render();
+
+    // 登入成功後才初始化雲端資料
+    if (window.__auth && window.__auth.currentUser()) {
+      initCloud();
+    } else {
+      window.addEventListener('auth-ready', initCloud, { once: true });
+    }
   });
+
+  async function doLogin() {
+    const email = document.getElementById('login-email').value.trim();
+    const password = document.getElementById('login-password').value;
+    const errEl = document.getElementById('login-error');
+    errEl.style.display = 'none';
+    if (!email || !password) {
+      errEl.textContent = '請輸入 Email 和密碼';
+      errEl.style.display = 'block';
+      return;
+    }
+    if (!window.__auth) {
+      errEl.textContent = '系統尚未載入完成，請稍候再試';
+      errEl.style.display = 'block';
+      return;
+    }
+    const result = await window.__auth.login(email, password);
+    if (!result.ok) {
+      const msg = {
+        'auth/invalid-credential': '帳號或密碼錯誤',
+        'auth/invalid-email': 'Email 格式不正確',
+        'auth/user-not-found': '找不到此帳號',
+        'auth/wrong-password': '密碼錯誤',
+        'auth/too-many-requests': '嘗試次數過多，請稍後再試',
+        'auth/network-request-failed': '網路連線失敗'
+      }[result.error] || ('登入失敗：' + result.error);
+      errEl.textContent = msg;
+      errEl.style.display = 'block';
+    }
+  }
+
+  async function doLogout() {
+    if (!confirm('確定要登出？')) return;
+    await window.__auth.logout();
+  }
 
   function populateMonthSelects() {
     const now = new Date();
@@ -735,7 +1087,6 @@
   }
 
   function renderSummary() {
-    // 與收入報表月份選擇器同步，確保數字一致
     const sel = document.getElementById('income-month-select');
     const currentMonth = sel ? sel.value : localMonthStr();
 
@@ -747,19 +1098,145 @@
     });
     const monthSessionCount = monthSessions.reduce((a, s) => a + (s.count || 1), 0);
 
-    // 預收賬款 = 所有學生剩餘堂數 × 單價（不分月）
+    // 累計預收賬款 = 所有購買堂數型學生的購買總金額
     let deferred = 0;
+    // 剩餘預收賬款 = 目前尚未銷課的堂數金額
+    let remainingDeferred = 0;
     students.forEach(st => {
+      if (st.type === 'per_session') return;
+      deferred += st.total * st.price;
       const used = sessions.filter(s => s.studentId === st.id).reduce((a, s) => a + (s.count || 1), 0);
-      deferred += Math.max(0, st.total - used) * st.price;
+      remainingDeferred += Math.max(0, st.total - used) * st.price;
+    });
+
+    // 本月新增預收賬款
+    let newDeferred = 0;
+    students.forEach(st => {
+      if (st.type === 'per_session') return;
+      if (st.date && st.date.slice(0, 7) === currentMonth) {
+        newDeferred += st.total * st.price;
+      }
     });
 
     const [y, m] = currentMonth.split('-');
     document.getElementById('summary-income').textContent = '$' + income.toLocaleString();
     document.getElementById('summary-income-sub').textContent = y + '年' + parseInt(m) + '月・' + monthSessionCount + ' 堂';
     document.getElementById('summary-deferred').textContent = '$' + deferred.toLocaleString();
+    const remDefEl = document.getElementById('summary-remaining-deferred');
+    if (remDefEl) remDefEl.textContent = '$' + remainingDeferred.toLocaleString();
     document.getElementById('summary-sessions').textContent = monthSessionCount;
     document.getElementById('summary-students').textContent = students.length;
+
+    const newDeferredEl = document.getElementById('summary-new-deferred');
+    if (newDeferredEl) {
+      newDeferredEl.textContent = '$' + newDeferred.toLocaleString();
+      document.getElementById('summary-new-deferred-sub').textContent = y + '年' + parseInt(m) + '月新購';
+    }
+
+    // 固定支出小計（房租36000 + 稅4096 + 健保864 + 管理費3186）
+    const FIXED_BASE = 43146;
+    // 其他支出只計算 TWD 部分（非TWD幣別僅顯示不計入）
+    const twdExtras = extraExpenses.filter(e => !e.currency || e.currency.toUpperCase() === 'TWD' || e.currency === '$' || e.currency === '');
+    const extraTotal = twdExtras.reduce((a, e) => a + (e.amount || 0), 0);
+    const totalExpense = FIXED_BASE + extraTotal;
+
+    const subtotalEl = document.getElementById('fixed-subtotal');
+    if (subtotalEl) subtotalEl.textContent = '$' + totalExpense.toLocaleString();
+
+    const profit = income - totalExpense;
+    const profitEl = document.getElementById('banner-profit');
+    if (profitEl) {
+      profitEl.textContent = (profit >= 0 ? '+' : '') + '$' + profit.toLocaleString();
+      profitEl.style.color = profit >= 0 ? '#7adc9a' : '#ff8a8a';
+    }
+
+    renderExtraExpenses();
+  }
+
+  function renderExtraExpenses() {
+    const container = document.getElementById('extra-expense-cards');
+    if (!container) return;
+    if (extraExpenses.length === 0) { container.innerHTML = ''; return; }
+    container.innerHTML = extraExpenses.map(e => `
+      <div class="card" style="border-top:3px solid #8e44ad;position:relative;">
+        <div class="card-label">${e.name}</div>
+        <div class="card-value" style="color:#8e44ad;font-size:1.4rem;">${e.currency ? e.currency + ' ' : ''}${Number(e.amount).toLocaleString()}</div>
+        <div class="card-sub">每月固定</div>
+        <div style="position:absolute;top:8px;right:8px;display:flex;gap:4px;">
+          <button class="btn btn-ghost btn-sm" onclick="editExpense('${e.id}')" style="padding:2px 6px;font-size:0.65rem;">編輯</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteExpense('${e.id}')" style="padding:2px 6px;font-size:0.65rem;">✕</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function toggleExpenseSection() {
+    const cards = document.getElementById('expense-cards');
+    const btn = document.getElementById('expense-toggle-btn');
+    const hidden = cards.style.display === 'none';
+    cards.style.display = hidden ? '' : 'none';
+    btn.textContent = hidden ? '隱藏' : '顯示';
+  }
+
+  // ─── Extra Expenses CRUD ──────────────────────────────────────────────────────
+  let editingExpenseId = null;
+
+  function openExpenseModal(eid) {
+    editingExpenseId = eid || null;
+    const ex = eid ? extraExpenses.find(e => e.id === eid) : null;
+    document.getElementById('expense-modal-title').textContent = ex ? '編輯其他支出' : '新增其他支出';
+    document.getElementById('ex-name').value = ex ? ex.name : '';
+    document.getElementById('ex-amount').value = ex ? ex.amount : '';
+    document.getElementById('ex-currency').value = ex ? ex.currency : '';
+    openModal('expense-modal');
+  }
+
+  function saveExpense() {
+    const name = document.getElementById('ex-name').value.trim();
+    const amount = parseFloat(document.getElementById('ex-amount').value);
+    const currency = document.getElementById('ex-currency').value.trim();
+    if (!name) return alert('請輸入支出名稱');
+    if (isNaN(amount)) return alert('請輸入金額');
+    if (editingExpenseId) {
+      const idx = extraExpenses.findIndex(e => e.id === editingExpenseId);
+      if (idx >= 0) extraExpenses[idx] = { ...extraExpenses[idx], name, amount, currency };
+    } else {
+      extraExpenses.push({ id: id(), name, amount, currency });
+    }
+    save();
+    renderSummary();
+    closeModal('expense-modal');
+  }
+
+  function editExpense(eid) { openExpenseModal(eid); }
+
+  function deleteExpense(eid) {
+    if (!confirm('確定刪除此支出項目？')) return;
+    extraExpenses = extraExpenses.filter(e => e.id !== eid);
+    save();
+    renderSummary();
+  }
+
+  function togglePriceSort() {
+    priceSort = priceSort === 'asc' ? 'desc' : priceSort === 'desc' ? null : 'asc';
+    remainingSort = null;
+    document.getElementById('price-sort-icon').textContent = priceSort === 'asc' ? '↑' : priceSort === 'desc' ? '↓' : '⇅';
+    document.getElementById('remaining-sort-icon').textContent = '⇅';
+    renderStudents();
+  }
+
+  function togglePriceCol() {
+    priceColHidden = !priceColHidden;
+    document.getElementById('price-col-toggle').style.opacity = priceColHidden ? '0.25' : '0.5';
+    renderStudents();
+  }
+
+  function toggleRemainingSort() {
+    remainingSort = remainingSort === 'asc' ? 'desc' : remainingSort === 'desc' ? null : 'asc';
+    priceSort = null;
+    document.getElementById('remaining-sort-icon').textContent = remainingSort === 'asc' ? '↑' : remainingSort === 'desc' ? '↓' : '⇅';
+    document.getElementById('price-sort-icon').textContent = '⇅';
+    renderStudents();
   }
 
   function renderStudents() {
@@ -768,30 +1245,48 @@
       tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state"><div class="icon">📋</div>尚無學生資料，點擊「新增學生」開始建立</div></td></tr>`;
       return;
     }
-    tbody.innerHTML = students.map(st => {
+
+    // 先計算每位學生的剩餘堂數
+    let list = students.map(st => {
+      const isPerSession = st.type === 'per_session';
       const used = sessions.filter(s => s.studentId === st.id).reduce((a,s) => a+(s.count||1), 0);
-      const remaining = st.total - used;
-      const pct = Math.round((used / st.total) * 100);
+      const remaining = isPerSession ? Infinity : st.total - used;
+      return { st, isPerSession, used, remaining };
+    });
+
+    // 排序
+    if (priceSort) {
+      list.sort((a, b) => priceSort === 'asc' ? a.st.price - b.st.price : b.st.price - a.st.price);
+    } else if (remainingSort) {
+      list.sort((a, b) => remainingSort === 'asc' ? a.remaining - b.remaining : b.remaining - a.remaining);
+    }
+
+    tbody.innerHTML = list.map(({ st, isPerSession, used, remaining }) => {
+      const pct = isPerSession ? null : Math.round((used / st.total) * 100);
       const fillColor = remaining <= 2 ? 'var(--rust)' : remaining <= 5 ? 'var(--gold)' : 'var(--sage)';
-      const tag = remaining <= 0 
+      const tag = isPerSession
+        ? `<span class="tag tag-gray">單堂付費</span>`
+        : remaining <= 0
         ? `<span class="tag tag-rust">已用完</span>`
-        : remaining <= 2 
+        : remaining <= 2
         ? `<span class="tag tag-rust">⚠ ${remaining} 堂</span>`
-        : remaining <= 5 
+        : remaining <= 5
         ? `<span class="tag tag-gold">${remaining} 堂</span>`
         : `<span class="tag tag-sage">${remaining} 堂</span>`;
 
       return `<tr>
-        <td><span class="student-name">${st.name}</span></td>
-        <td>${st.total} 堂</td>
-        <td><span style="font-family:'DM Mono',monospace;">$${st.price.toLocaleString()}</span></td>
+        <td><span class="student-name">${st.name}</span>${isPerSession ? ' <span class="tag tag-gray" style="font-size:0.65rem;">單堂</span>' : ''}</td>
+        <td>${isPerSession ? '—' : st.total + ' 堂'}</td>
+        <td style="${priceColHidden ? 'filter:blur(5px);user-select:none;' : ''}">
+          <span style="font-family:'DM Mono',monospace;">$${st.price.toLocaleString()}</span>
+        </td>
         <td>${used} 堂</td>
-        <td class="${remaining <= 2 ? 'low-balance' : ''}">${tag}</td>
+        <td>${tag}</td>
         <td>
-          <div class="progress-bar-wrap">
-            <div class="progress-bar"><div class="progress-bar-fill" style="width:${pct}%;background:${fillColor}"></div></div>
-            <span class="progress-val">${pct}%</span>
-          </div>
+          ${isPerSession
+            ? '<span style="font-size:0.75rem;color:var(--muted);">每堂收費</span>'
+            : `<div class="progress-bar-wrap"><div class="progress-bar"><div class="progress-bar-fill" style="width:${pct}%;background:${fillColor}"></div></div><span class="progress-val">${pct}%</span></div>`
+          }
         </td>
         <td><span style="font-family:'DM Mono',monospace;font-size:0.78rem;color:var(--muted);">${st.date||'—'}</span></td>
         <td>
@@ -918,8 +1413,10 @@
   function openAddStudent() {
     editingStudentId = null;
     document.getElementById('modal-title').textContent = '新增學生';
-    ['f-name','f-total','f-price','f-note'].forEach(id => document.getElementById(id).value = '');
+    ['f-name','f-total','f-price','f-price-ps','f-note'].forEach(id => document.getElementById(id).value = '');
     document.getElementById('f-date').value = localDateStr();
+    document.querySelector('input[name="f-type"][value="package"]').checked = true;
+    toggleStudentType();
     openModal('student-modal');
   }
 
@@ -929,29 +1426,57 @@
     editingStudentId = sid;
     document.getElementById('modal-title').textContent = '編輯學生';
     document.getElementById('f-name').value = st.name;
-    document.getElementById('f-total').value = st.total;
-    document.getElementById('f-price').value = st.price;
     document.getElementById('f-date').value = st.date || '';
     document.getElementById('f-note').value = st.note || '';
+    const type = st.type || 'package';
+    document.querySelector('input[name="f-type"][value="' + type + '"]').checked = true;
+    if (type === 'package') {
+      document.getElementById('f-total').value = st.total;
+      document.getElementById('f-price').value = st.price;
+      document.getElementById('f-price-ps').value = '';
+    } else {
+      document.getElementById('f-total').value = '';
+      document.getElementById('f-price').value = '';
+      document.getElementById('f-price-ps').value = st.price;
+    }
+    toggleStudentType();
     openModal('student-modal');
+  }
+
+  function toggleStudentType() {
+    const type = document.querySelector('input[name="f-type"]:checked').value;
+    document.getElementById('f-package-fields').style.display = type === 'package' ? '' : 'none';
+    document.getElementById('f-persession-fields').style.display = type === 'per_session' ? '' : 'none';
+    document.getElementById('type-label-package').style.borderColor = type === 'package' ? 'var(--ink)' : 'var(--border)';
+    document.getElementById('type-label-persession').style.borderColor = type === 'per_session' ? 'var(--ink)' : 'var(--border)';
   }
 
   function saveStudent() {
     const name = document.getElementById('f-name').value.trim();
-    const total = parseInt(document.getElementById('f-total').value);
-    const price = parseFloat(document.getElementById('f-price').value);
     const date = document.getElementById('f-date').value;
     const note = document.getElementById('f-note').value.trim();
+    const type = document.querySelector('input[name="f-type"]:checked').value;
 
     if (!name) return alert('請輸入學生姓名');
-    if (!total || total < 1) return alert('請輸入有效購買堂數');
-    if (price === '' || isNaN(price)) return alert('請輸入單價');
+
+    let studentData;
+    if (type === 'package') {
+      const total = parseInt(document.getElementById('f-total').value);
+      const price = parseFloat(document.getElementById('f-price').value);
+      if (!total || total < 1) return alert('請輸入有效購買堂數');
+      if (isNaN(price)) return alert('請輸入單價');
+      studentData = { name, type: 'package', total, price, date, note };
+    } else {
+      const price = parseFloat(document.getElementById('f-price-ps').value);
+      if (isNaN(price)) return alert('請輸入每堂收費');
+      studentData = { name, type: 'per_session', total: 0, price, date, note };
+    }
 
     if (editingStudentId) {
       const idx = students.findIndex(s => s.id === editingStudentId);
-      if (idx >= 0) students[idx] = { ...students[idx], name, total, price, date, note };
+      if (idx >= 0) students[idx] = { ...students[idx], ...studentData };
     } else {
-      students.push({ id: id(), name, total, price, date, note });
+      students.push({ id: id(), ...studentData });
     }
 
     save();
@@ -979,11 +1504,16 @@
     const st = students.find(s => s.id === sid);
     const info = document.getElementById('session-info');
     if (!st) { info.style.display='none'; return; }
-    const used = sessions.filter(s => s.studentId === sid).reduce((a,s)=>a+(s.count||1),0);
-    const remaining = st.total - used;
     info.style.display = 'block';
-    info.innerHTML = `剩餘堂數：${remaining} 堂　本次記錄：${count} 堂　記錄後剩餘：${remaining - count} 堂　本次收入：$${(st.price * count).toLocaleString()}`;
-    info.style.color = remaining - count < 0 ? 'var(--rust)' : 'var(--muted)';
+    info.style.color = 'var(--muted)';
+    if (st.type === 'per_session') {
+      info.innerHTML = `付費方式：單堂付費　本次堂數：${count} 堂　本次收入：$${(st.price * count).toLocaleString()}`;
+    } else {
+      const used = sessions.filter(s => s.studentId === sid).reduce((a,s)=>a+(s.count||1),0);
+      const remaining = st.total - used;
+      info.innerHTML = `剩餘堂數：${remaining} 堂　本次記錄：${count} 堂　記錄後剩餘：${remaining - count} 堂　本次收入：$${(st.price * count).toLocaleString()}`;
+      info.style.color = remaining - count < 0 ? 'var(--rust)' : 'var(--muted)';
+    }
   }
 
   function saveSession() {
@@ -996,9 +1526,11 @@
     if (!date) return alert('請選擇日期');
 
     const st = students.find(s => s.id === studentId);
-    const used = sessions.filter(s => s.studentId === studentId).reduce((a,s)=>a+(s.count||1),0);
-    if (used + count > st.total) {
-      if (!confirm(`此學生剩餘堂數不足（剩餘 ${st.total - used} 堂），確定要繼續記錄？`)) return;
+    if (st && st.type !== 'per_session') {
+      const used = sessions.filter(s => s.studentId === studentId).reduce((a,s)=>a+(s.count||1),0);
+      if (used + count > st.total) {
+        if (!confirm(`此學生剩餘堂數不足（剩餘 ${st.total - used} 堂），確定要繼續記錄？`)) return;
+      }
     }
 
     sessions.push({ id: id(), studentId, date, count, desc });
@@ -1014,27 +1546,27 @@
     if (!st) return;
     document.getElementById('detail-name').textContent = st.name + ' 的學習記錄';
 
+    const isPerSession = st.type === 'per_session';
     const used = sessions.filter(s => s.studentId === sid).reduce((a,s)=>a+(s.count||1),0);
-    const remaining = st.total - used;
-    const totalPaid = st.total * st.price;
+    const remaining = isPerSession ? null : st.total - used;
     const earned = used * st.price;
-    const deferred = remaining * st.price;
+    const deferred = isPerSession ? 0 : Math.max(0, remaining) * st.price;
 
     const stSessions = sessions.filter(s => s.studentId === sid).sort((a,b)=>b.date.localeCompare(a.date));
 
     document.getElementById('detail-content').innerHTML = `
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;">
         <div class="card gold" style="padding:12px 16px;">
-          <div class="card-label">購買堂數</div>
-          <div class="card-value" style="font-size:1.6rem;">${st.total}</div>
+          <div class="card-label">${isPerSession ? '付費方式' : '購買堂數'}</div>
+          <div class="card-value" style="font-size:${isPerSession?'1rem':'1.6rem'};margin-top:${isPerSession?'8px':'0'}">${isPerSession ? '單堂付費' : st.total}</div>
         </div>
         <div class="card sage" style="padding:12px 16px;">
-          <div class="card-label">已用堂數</div>
+          <div class="card-label">已上課堂數</div>
           <div class="card-value" style="font-size:1.6rem;">${used}</div>
         </div>
-        <div class="card ${remaining<=2?'rust':'ink'}" style="padding:12px 16px;">
-          <div class="card-label">剩餘堂數</div>
-          <div class="card-value" style="font-size:1.6rem;">${remaining}</div>
+        <div class="card ${!isPerSession && remaining<=2?'rust':'ink'}" style="padding:12px 16px;">
+          <div class="card-label">${isPerSession ? '每堂收費' : '剩餘堂數'}</div>
+          <div class="card-value" style="font-size:1.6rem;">${isPerSession ? '$'+st.price.toLocaleString() : remaining}</div>
         </div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;font-size:0.82rem;">
@@ -1043,31 +1575,35 @@
           <div style="font-family:'DM Mono',monospace;font-weight:600;">$${st.price.toLocaleString()}</div>
         </div>
         <div style="padding:8px 12px;background:var(--cream);border:1px solid var(--border);border-radius:3px;">
-          <div class="income-label">購買金額</div>
-          <div style="font-family:'DM Mono',monospace;font-weight:600;">$${totalPaid.toLocaleString()}</div>
+          <div class="income-label">${isPerSession ? '累計上課' : '購買金額'}</div>
+          <div style="font-family:'DM Mono',monospace;font-weight:600;">${isPerSession ? used+'堂' : '$'+(st.total*st.price).toLocaleString()}</div>
         </div>
         <div style="padding:8px 12px;background:var(--cream);border:1px solid var(--border);border-radius:3px;">
-          <div class="income-label">已銷課收入</div>
+          <div class="income-label">累計收入</div>
           <div style="font-family:'DM Mono',monospace;font-weight:600;color:var(--sage);">$${earned.toLocaleString()}</div>
         </div>
         <div style="padding:8px 12px;background:var(--cream);border:1px solid var(--border);border-radius:3px;">
           <div class="income-label">預收賬款</div>
-          <div style="font-family:'DM Mono',monospace;font-weight:600;color:var(--rust);">$${deferred.toLocaleString()}</div>
+          <div style="font-family:'DM Mono',monospace;font-weight:600;color:var(--rust);">${isPerSession ? '—' : '$'+deferred.toLocaleString()}</div>
         </div>
       </div>
       <div style="font-size:0.8rem;font-weight:600;margin-bottom:8px;letter-spacing:0.06em;color:var(--muted);">上課記錄（${stSessions.length} 次）</div>
       <div class="detail-sessions">
-        ${stSessions.length === 0 
+        ${stSessions.length === 0
           ? '<div class="empty-state" style="padding:24px;">尚無上課記錄</div>'
           : stSessions.map(s => `
-            <div class="session-item">
-              <div>
-                <span class="session-date">${s.date}</span>
-                <span style="margin-left:10px;">${s.desc || '（未填說明）'}</span>
-                ${s.count>1 ? `<span class="tag tag-gray" style="margin-left:6px;">${s.count}堂</span>` : ''}
+            <div class="session-item" style="flex-wrap:wrap;gap:6px;padding:10px 12px;">
+              <div style="display:flex;align-items:center;gap:6px;flex:1;flex-wrap:wrap;min-width:0;">
+                <input type="date" value="${s.date}"
+                  onchange="updateSessionField('${s.id}','date',this.value)"
+                  style="font-family:'DM Mono',monospace;font-size:0.78rem;color:var(--ink);border:1px solid var(--border);border-radius:3px;padding:3px 6px;background:var(--paper);outline:none;width:130px;">
+                <input type="text" value="${s.desc || ''}" placeholder="課堂說明"
+                  onchange="updateSessionField('${s.id}','desc',this.value)"
+                  style="font-size:0.82rem;color:var(--ink);border:1px solid var(--border);border-radius:3px;padding:3px 8px;background:var(--paper);outline:none;flex:1;min-width:80px;">
+                ${s.count>1 ? `<span class="tag tag-gray">${s.count}堂</span>` : ''}
               </div>
-              <div style="display:flex;align-items:center;gap:8px;">
-                <span style="font-family:'DM Mono',monospace;color:var(--sage);font-size:0.78rem;">$${(st.price*(s.count||1)).toLocaleString()}</span>
+              <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+                <span style="font-family:'DM Mono',monospace;color:var(--sage);font-size:0.78rem;white-space:nowrap;">$${(st.price*(s.count||1)).toLocaleString()}</span>
                 <button class="btn btn-danger btn-sm" onclick="deleteSession('${s.id}')">刪除</button>
               </div>
             </div>
@@ -1078,6 +1614,14 @@
     `;
 
     openModal('detail-modal');
+  }
+
+  function updateSessionField(sessId, field, value) {
+    const idx = sessions.findIndex(s => s.id === sessId);
+    if (idx < 0) return;
+    sessions[idx][field] = value;
+    save();
+    render(); // 更新報表數字，但不重開詳情（避免游標跑掉）
   }
 
   function deleteSession(sessId) {
