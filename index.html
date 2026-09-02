@@ -630,12 +630,21 @@
     </div>
   </div>
 
+  <!-- Extra Income Section -->
+  <div style="margin-bottom:8px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+      <div style="font-size:0.7rem;letter-spacing:0.12em;text-transform:uppercase;font-family:'DM Mono',monospace;color:var(--muted);">額外收入</div>
+      <button class="btn btn-ghost btn-sm" onclick="openIncomeModal()" style="font-size:0.7rem;padding:3px 10px;">＋ 額外收入</button>
+    </div>
+    <div id="extra-income-cards" class="summary-row" style="margin-bottom:0;"></div>
+  </div>
+
   <!-- Summary Cards -->
   <div class="summary-row">
     <div class="card sage">
       <div class="card-label">本月淨利</div>
       <div class="card-value" id="banner-profit" style="color:var(--sage);">—</div>
-      <div class="card-sub" id="profit-sub">銷課收入 − 總支出</div>
+      <div class="card-sub" id="profit-sub">銷課＋額外收入 − 總支出</div>
     </div>
     <div class="card gold">
       <div class="card-label">本月銷課收入</div>
@@ -682,7 +691,10 @@
     <div class="section">
       <div class="section-header">
         <div class="section-title"><span class="dot"></span>學生列表</div>
-        <button class="btn btn-primary" onclick="openAddStudent()">＋ 新增學生</button>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="btn btn-ghost btn-sm" id="inactive-toggle-btn" onclick="toggleInactive()" style="font-size:0.75rem;">顯示停課學生</button>
+          <button class="btn btn-primary" onclick="openAddStudent()">＋ 新增學生</button>
+        </div>
       </div>
       <div class="table-wrap">
         <table>
@@ -829,6 +841,31 @@
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeModal('purchase-modal')">取消</button>
       <button class="btn btn-primary" onclick="savePurchase()">儲存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Extra Income Modal -->
+<div class="modal-overlay" id="income-modal">
+  <div class="modal" style="max-width:420px;">
+    <h3 id="income-modal-title">新增額外收入</h3>
+    <div class="form-group">
+      <label>收入名稱</label>
+      <input type="text" id="ei-name" placeholder="例：場地出借、教材費、活動費">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>金額</label>
+        <input type="number" id="ei-amount" placeholder="例：3000" min="0">
+      </div>
+      <div class="form-group">
+        <label>幣別／備註</label>
+        <input type="text" id="ei-currency" placeholder="例：TWD、每月、一次性">
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('income-modal')">取消</button>
+      <button class="btn btn-sage" onclick="saveIncome()">儲存</button>
     </div>
   </div>
 </div>
@@ -985,11 +1022,13 @@
   let sessions = JSON.parse(localStorage.getItem('cms_sessions') || '[]');
   let extraExpenses = JSON.parse(localStorage.getItem('cms_extra_expenses') || '[]');
   let purchases = JSON.parse(localStorage.getItem('cms_purchases') || '[]');
+  let extraIncomes = JSON.parse(localStorage.getItem('cms_extra_incomes') || '[]');
   let editingStudentId = null;
   let currentDetailId = null;
   let priceSort = null;       // null | 'asc' | 'desc'
   let remainingSort = null;   // null | 'asc' | 'desc'
   let priceColHidden = false;
+  let showInactive = false;
 
   let saveTimer = null;
   let isApplyingRemote = false;
@@ -1016,6 +1055,7 @@
     localStorage.setItem('cms_sessions', JSON.stringify(sessions));
     localStorage.setItem('cms_extra_expenses', JSON.stringify(extraExpenses));
     localStorage.setItem('cms_purchases', JSON.stringify(purchases));
+    localStorage.setItem('cms_extra_incomes', JSON.stringify(extraIncomes));
     if (isApplyingRemote) return;
     clearTimeout(saveTimer);
     setSyncStatus('☁ 儲存中…', 'var(--gold)');
@@ -1023,7 +1063,7 @@
       if (!window.__cloud) { setSyncStatus('⚠ 未連線（僅存本機）', 'var(--rust)'); saveTimer = null; return; }
       const ts = Date.now();
       lastSavedAt = ts;
-      const ok = await window.__cloud.save({ students, sessions, extraExpenses, purchases }, ts);
+      const ok = await window.__cloud.save({ students, sessions, extraExpenses, purchases, extraIncomes }, ts);
       setSyncStatus(ok ? '☁ 已同步' : '⚠ 同步失敗', ok ? 'var(--sage)' : 'var(--rust)');
       saveTimer = null;
     }, 500);
@@ -1045,19 +1085,21 @@
       sessions = cloudData.sessions || [];
       extraExpenses = cloudData.extraExpenses || [];
       purchases = cloudData.purchases || [];
+      extraIncomes = cloudData.extraIncomes || [];
       localStorage.setItem('cms_students', JSON.stringify(students));
       localStorage.setItem('cms_sessions', JSON.stringify(sessions));
       localStorage.setItem('cms_extra_expenses', JSON.stringify(extraExpenses));
       localStorage.setItem('cms_purchases', JSON.stringify(purchases));
+      localStorage.setItem('cms_extra_incomes', JSON.stringify(extraIncomes));
       isApplyingRemote = false;
       render();
       updateSessionStudentSelect();
       setSyncStatus('☁ 已同步', 'var(--sage)');
     } else {
       // 雲端無資料 → 把本機目前資料傳上去
-      const hasLocal = students.length || sessions.length || extraExpenses.length || purchases.length;
+      const hasLocal = students.length || sessions.length || extraExpenses.length || purchases.length || extraIncomes.length;
       if (hasLocal) {
-        const ok = await window.__cloud.save({ students, sessions, extraExpenses, purchases });
+        const ok = await window.__cloud.save({ students, sessions, extraExpenses, purchases, extraIncomes });
         setSyncStatus(ok ? '☁ 已同步（首次上傳）' : '⚠ 同步失敗', ok ? 'var(--sage)' : 'var(--rust)');
       } else {
         setSyncStatus('☁ 已連線（無資料）', 'var(--sage)');
@@ -1079,10 +1121,12 @@
       sessions = data.sessions || [];
       extraExpenses = data.extraExpenses || [];
       purchases = data.purchases || [];
+      extraIncomes = data.extraIncomes || [];
       localStorage.setItem('cms_students', JSON.stringify(students));
       localStorage.setItem('cms_sessions', JSON.stringify(sessions));
       localStorage.setItem('cms_extra_expenses', JSON.stringify(extraExpenses));
       localStorage.setItem('cms_purchases', JSON.stringify(purchases));
+      localStorage.setItem('cms_extra_incomes', JSON.stringify(extraIncomes));
       isApplyingRemote = false;
       render();
       updateSessionStudentSelect();
@@ -1202,6 +1246,8 @@
       const used = sessions.filter(s => s.studentId === st.id).reduce((a, s) => a + (s.count || 1), 0);
       remainingDeferred += Math.max(0, st.total - used) * st.price;
     });
+    // 學生人數只計算在籍（非停課）
+    const activeStudentCount = students.filter(s => !s.inactive).length;
 
     // 本月新增預收賬款（包含初始加入的學生 + 本月所有續購記錄）
     let newDeferred = 0;
@@ -1227,7 +1273,7 @@
     const remDefEl = document.getElementById('summary-remaining-deferred');
     if (remDefEl) remDefEl.textContent = '$' + remainingDeferred.toLocaleString();
     document.getElementById('summary-sessions').textContent = monthSessionCount;
-    document.getElementById('summary-students').textContent = students.length;
+    document.getElementById('summary-students').textContent = activeStudentCount + (students.some(s=>s.inactive) ? ' (+'+students.filter(s=>s.inactive).length+'停課)' : '');
 
     const newDeferredEl = document.getElementById('summary-new-deferred');
     if (newDeferredEl) {
@@ -1237,7 +1283,7 @@
 
     // 固定支出小計（房租36000 + 稅4096 + 健保864 + 管理費3186）
     const FIXED_BASE = 43146;
-    // 其他支出只計算 TWD 部分（非TWD幣別僅顯示不計入）
+    // 其他支出只計算 TWD 部分
     const twdExtras = extraExpenses.filter(e => !e.currency || e.currency.toUpperCase() === 'TWD' || e.currency === '$' || e.currency === '');
     const extraTotal = twdExtras.reduce((a, e) => a + (e.amount || 0), 0);
     const totalExpense = FIXED_BASE + extraTotal;
@@ -1245,7 +1291,11 @@
     const subtotalEl = document.getElementById('fixed-subtotal');
     if (subtotalEl) subtotalEl.textContent = '$' + totalExpense.toLocaleString();
 
-    const profit = income - totalExpense;
+    // 額外收入只計算 TWD 部分
+    const twdIncomes = extraIncomes.filter(e => !e.currency || e.currency.toUpperCase() === 'TWD' || e.currency === '$' || e.currency === '' || e.currency === '每月' || e.currency === '一次性');
+    const extraIncomeTotal = twdIncomes.reduce((a, e) => a + (e.amount || 0), 0);
+
+    const profit = income + extraIncomeTotal - totalExpense;
     const profitEl = document.getElementById('banner-profit');
     if (profitEl) {
       profitEl.textContent = (profit >= 0 ? '+' : '') + '$' + profit.toLocaleString();
@@ -1253,6 +1303,7 @@
     }
 
     renderExtraExpenses();
+    renderExtraIncomes();
   }
 
   function renderExtraExpenses() {
@@ -1281,6 +1332,60 @@
   }
 
   // ─── Extra Expenses CRUD ──────────────────────────────────────────────────────
+  // ─── Extra Income CRUD ────────────────────────────────────────────────────────
+  let editingIncomeId = null;
+
+  function openIncomeModal(eid) {
+    editingIncomeId = eid || null;
+    const ei = eid ? extraIncomes.find(e => e.id === eid) : null;
+    document.getElementById('income-modal-title').textContent = ei ? '編輯額外收入' : '新增額外收入';
+    document.getElementById('ei-name').value = ei ? ei.name : '';
+    document.getElementById('ei-amount').value = ei ? ei.amount : '';
+    document.getElementById('ei-currency').value = ei ? ei.currency : '';
+    openModal('income-modal');
+  }
+
+  function saveIncome() {
+    const name = document.getElementById('ei-name').value.trim();
+    const amount = parseFloat(document.getElementById('ei-amount').value);
+    const currency = document.getElementById('ei-currency').value.trim();
+    if (!name) return alert('請輸入收入名稱');
+    if (isNaN(amount)) return alert('請輸入金額');
+    if (editingIncomeId) {
+      const idx = extraIncomes.findIndex(e => e.id === editingIncomeId);
+      if (idx >= 0) extraIncomes[idx] = { ...extraIncomes[idx], name, amount, currency };
+    } else {
+      extraIncomes.push({ id: id(), name, amount, currency });
+    }
+    save();
+    renderSummary();
+    closeModal('income-modal');
+  }
+
+  function deleteIncome(eid) {
+    if (!confirm('確定刪除此收入項目？')) return;
+    extraIncomes = extraIncomes.filter(e => e.id !== eid);
+    save();
+    renderSummary();
+  }
+
+  function renderExtraIncomes() {
+    const container = document.getElementById('extra-income-cards');
+    if (!container) return;
+    if (extraIncomes.length === 0) { container.innerHTML = ''; return; }
+    container.innerHTML = extraIncomes.map(e => `
+      <div class="card" style="border-top:3px solid var(--sage);position:relative;">
+        <div class="card-label">${e.name}</div>
+        <div class="card-value" style="color:var(--sage);font-size:1.4rem;">${e.currency ? e.currency + ' ' : ''}${Number(e.amount).toLocaleString()}</div>
+        <div class="card-sub">${e.currency || '額外收入'}</div>
+        <div style="position:absolute;top:8px;right:8px;display:flex;gap:4px;">
+          <button class="btn btn-ghost btn-sm" onclick="openIncomeModal('${e.id}')" style="padding:2px 6px;font-size:0.65rem;">編輯</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteIncome('${e.id}')" style="padding:2px 6px;font-size:0.65rem;">✕</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
   let editingExpenseId = null;
 
   function openExpenseModal(eid) {
@@ -1359,32 +1464,65 @@
     renderStudents();
   }
 
+  function toggleInactive() {
+    showInactive = !showInactive;
+    const btn = document.getElementById('inactive-toggle-btn');
+    if (btn) btn.textContent = showInactive ? '隱藏停課學生' : '顯示停課學生';
+    renderStudents();
+  }
+
+  function toggleStudentStatus(sid) {
+    const idx = students.findIndex(s => s.id === sid);
+    if (idx < 0) return;
+    const st = students[idx];
+    const isActive = !st.inactive;
+    const msg = isActive
+      ? `確定將「${st.name}」設為停課？\n（學生將被隱藏，但所有記錄保留）`
+      : `確定將「${st.name}」恢復上課？`;
+    if (!confirm(msg)) return;
+    students[idx].inactive = isActive;
+    save();
+    renderStudents();
+    renderSummary();
+  }
+
   function renderStudents() {
     const tbody = document.getElementById('students-tbody');
-    if (students.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="9"><div class="empty-state"><div class="icon">📋</div>尚無學生資料，點擊「新增學生」開始建立</div></td></tr>`;
+
+    let list = students
+      .filter(st => showInactive ? true : !st.inactive)
+      .map(st => {
+        const isPerSession = st.type === 'per_session';
+        const used = sessions.filter(s => s.studentId === st.id).reduce((a,s) => a+(s.count||1), 0);
+        const remaining = isPerSession ? Infinity : st.total - used;
+        return { st, isPerSession, used, remaining };
+      });
+
+    if (list.length === 0) {
+      const msg = showInactive
+        ? '尚無學生資料'
+        : students.some(s => s.inactive)
+          ? '所有學生皆已停課，點「顯示停課學生」查看'
+          : '尚無學生資料，點擊「新增學生」開始建立';
+      tbody.innerHTML = `<tr><td colspan="9"><div class="empty-state"><div class="icon">📋</div>${msg}</div></td></tr>`;
       return;
     }
 
-    // 先計算每位學生的剩餘堂數
-    let list = students.map(st => {
-      const isPerSession = st.type === 'per_session';
-      const used = sessions.filter(s => s.studentId === st.id).reduce((a,s) => a+(s.count||1), 0);
-      const remaining = isPerSession ? Infinity : st.total - used;
-      return { st, isPerSession, used, remaining };
+    // 排序：先顯示正常學生，再顯示停課學生
+    list.sort((a, b) => {
+      if (a.st.inactive !== b.st.inactive) return a.st.inactive ? 1 : -1;
+      if (priceSort) return priceSort === 'asc' ? a.st.price - b.st.price : b.st.price - a.st.price;
+      if (remainingSort) return remainingSort === 'asc' ? a.remaining - b.remaining : b.remaining - a.remaining;
+      return 0;
     });
 
-    // 排序
-    if (priceSort) {
-      list.sort((a, b) => priceSort === 'asc' ? a.st.price - b.st.price : b.st.price - a.st.price);
-    } else if (remainingSort) {
-      list.sort((a, b) => remainingSort === 'asc' ? a.remaining - b.remaining : b.remaining - a.remaining);
-    }
-
     tbody.innerHTML = list.map(({ st, isPerSession, used, remaining }) => {
+      const inactive = !!st.inactive;
       const pct = isPerSession ? null : Math.round((used / st.total) * 100);
       const fillColor = remaining <= 2 ? 'var(--rust)' : remaining <= 5 ? 'var(--gold)' : 'var(--sage)';
-      const tag = isPerSession
+      const tag = inactive
+        ? `<span class="tag tag-gray">停課</span>`
+        : isPerSession
         ? `<span class="tag tag-gray">單堂付費</span>`
         : remaining <= 0
         ? `<span class="tag tag-rust">已用完</span>`
@@ -1394,9 +1532,14 @@
         ? `<span class="tag tag-gold">${remaining} 堂</span>`
         : `<span class="tag tag-sage">${remaining} 堂</span>`;
 
+      const rowStyle = inactive ? 'opacity:0.45;' : '';
       const ageInfo = formatAgeBirthday(st.birthday);
-      return `<tr>
-        <td><span class="student-name">${st.name}</span>${isPerSession ? ' <span class="tag tag-gray" style="font-size:0.65rem;">單堂</span>' : ''}</td>
+      return `<tr style="${rowStyle}">
+        <td>
+          <span class="student-name">${st.name}</span>
+          ${inactive ? '<span class="tag tag-gray" style="font-size:0.65rem;margin-left:4px;">停課</span>' : ''}
+          ${isPerSession && !inactive ? ' <span class="tag tag-gray" style="font-size:0.65rem;">單堂</span>' : ''}
+        </td>
         <td>${ageInfo}</td>
         <td>${isPerSession ? '—' : st.total + ' 堂'}</td>
         <td style="${priceColHidden ? 'filter:blur(5px);user-select:none;' : ''}">
@@ -1405,7 +1548,8 @@
         <td>${used} 堂</td>
         <td>${tag}</td>
         <td>
-          ${isPerSession
+          ${inactive ? '<span style="font-size:0.75rem;color:var(--muted);">—</span>'
+            : isPerSession
             ? '<span style="font-size:0.75rem;color:var(--muted);">每堂收費</span>'
             : `<div class="progress-bar-wrap"><div class="progress-bar"><div class="progress-bar-fill" style="width:${pct}%;background:${fillColor}"></div></div><span class="progress-val">${pct}%</span></div>`
           }
@@ -1414,8 +1558,12 @@
         <td>
           <div class="action-group">
             <button class="btn btn-ghost btn-sm" onclick="openDetail('${st.id}')">詳情</button>
-            <button class="btn btn-ghost btn-sm" onclick="openAddSession('${st.id}')">上課</button>
-            <button class="btn btn-ghost btn-sm" onclick="editStudent('${st.id}')">編輯</button>
+            ${inactive
+              ? `<button class="btn btn-sage btn-sm" onclick="toggleStudentStatus('${st.id}')">恢復上課</button>`
+              : `<button class="btn btn-ghost btn-sm" onclick="openAddSession('${st.id}')">上課</button>
+                 <button class="btn btn-ghost btn-sm" onclick="editStudent('${st.id}')">編輯</button>
+                 <button class="btn btn-ghost btn-sm" onclick="toggleStudentStatus('${st.id}')">停課</button>`
+            }
             <button class="btn btn-danger btn-sm" onclick="deleteStudent('${st.id}')">刪除</button>
           </div>
         </td>
@@ -2060,7 +2208,7 @@
   }
 
   function exportData() {
-    const data = { students, sessions, extraExpenses, purchases, exportedAt: new Date().toISOString() };
+    const data = { students, sessions, extraExpenses, purchases, extraIncomes, exportedAt: new Date().toISOString() };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -2086,6 +2234,7 @@
         sessions = data.sessions;
         if (Array.isArray(data.extraExpenses)) extraExpenses = data.extraExpenses;
         if (Array.isArray(data.purchases)) purchases = data.purchases;
+        if (Array.isArray(data.extraIncomes)) extraIncomes = data.extraIncomes;
         save();
         render();
         updateSessionStudentSelect();
