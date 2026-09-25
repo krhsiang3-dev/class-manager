@@ -751,6 +751,7 @@
           </select>
           <label style="font-size:0.8rem;color:var(--muted);">月份：</label>
           <select class="month-select" id="session-month-filter" onchange="renderSessionsLog()"></select>
+          <button class="btn btn-sage btn-sm" id="cal-import-btn" onclick="importFromCalendar()" style="white-space:nowrap;">📅 從行事曆匯入</button>
         </div>
       </div>
       <div class="table-wrap">
@@ -1622,6 +1623,134 @@
     }
 
     document.getElementById('income-table').innerHTML = html;
+  }
+
+
+  // Google Calendar Import
+  var CAL_ICAL_URL = 'https://calendar.google.com/calendar/ical/38b7da11fc7f47d8f319589848fc04f43bbb7861d9586b8e2a6ad90089025fc5%40group.calendar.google.com/public/basic.ics';
+  var CAL_CORS = '';  // 不用 proxy，直接讀取
+
+  function calParseTitle(title) {
+    title = (title || '').trim();
+    var m;
+    m = title.match(/^[\u0028\uff08]PT[\u0029\uff09]\s*(.+)$/i);
+    if (m) return { name: m[1].trim(), desc: '(PT) ' + m[1].trim() };
+    m = title.match(/^[\u0028\uff08]\u5834\u79df[\u0029\uff09]\s*(.+)$/);
+    if (m) return { name: m[1].trim(), desc: '(\u5834\u79df) ' + m[1].trim() };
+    m = title.match(/^[\u0028\uff08]\u7dda\u4e0a\u8ab2[\u0029\uff09]\s*(.+)$/);
+    if (m) return { name: m[1].trim(), desc: '(\u7dda\u4e0a\u8ab2) ' + m[1].trim() };
+    return { name: title, desc: title };
+  }
+
+  function calDateLocal(s) {
+    s = (s || '').replace('Z', '').replace(/[:\-]/g, '');
+    return s.slice(0,4) + '-' + s.slice(4,6) + '-' + s.slice(6,8);
+  }
+
+  function calFindStudent(name) {
+    var a = name.replace(/\s/g,'').toLowerCase();
+    return students.find(function(st) {
+      var b = st.name.replace(/\s/g,'').toLowerCase();
+      return b === a || b.indexOf(a) >= 0 || a.indexOf(b) >= 0;
+    });
+  }
+
+  async function importFromCalendar() {
+    var btn = document.getElementById('cal-import-btn');
+    var month = document.getElementById('session-month-filter').value;
+    btn.disabled = true;
+    btn.textContent = '⏳ 載入中…';
+    var icsText;
+    try {
+      var res = await fetch('https://cal-proxy.krhsiang3.workers.dev/');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      icsText = await res.text();
+    } catch(err) {
+      alert('無法讀取行事曆：' + err.message);
+      btn.disabled = false;
+      btn.textContent = '📅 從行事曆匯入';
+      return;
+    }
+
+    // Parse iCal blocks
+    var events = [];
+    var blocks = icsText.split('BEGIN:VEVENT');
+    for (var i = 1; i < blocks.length; i++) {
+      var blk = blocks[i];
+      var lines = blk.split(/\r?\n/);
+      var dtstart = '', summary = '', uid = '';
+      for (var j = 0; j < lines.length; j++) {
+        var ln = lines[j];
+        if (/^DTSTART/.test(ln)) dtstart = ln.replace(/^DTSTART[^:]*:/, '').trim();
+        else if (/^SUMMARY/.test(ln)) summary = ln.replace(/^SUMMARY[^:]*:/, '').trim();
+        else if (/^UID/.test(ln)) uid = ln.replace(/^UID[^:]*:/, '').trim();
+      }
+      if (!dtstart || !summary) continue;
+      var dateStr = calDateLocal(dtstart);
+      if (dateStr.slice(0,7) !== month) continue;
+      if (dateStr > localDateStr()) continue; // 跳過未來的課程
+      events.push({ dateStr: dateStr, summary: summary, uid: uid });
+    }
+
+    if (events.length === 0) {
+      alert(month + ' 在行事曆上找不到任何活動');
+      btn.disabled = false;
+      btn.textContent = '📅 從行事曆匯入';
+      return;
+    }
+
+    var toImport = [], unmatched = [], skipped = 0;
+    for (var k = 0; k < events.length; k++) {
+      var ev = events[k];
+      var parsed = calParseTitle(ev.summary);
+      var st = calFindStudent(parsed.name);
+      var dup = sessions.some(function(s) {
+        // 1. 同一個 calUid（之前從行事曆匯入過）
+        if (s.calUid && s.calUid === ev.uid) return true;
+        // 2. 同一個學生 + 同一天（手動 key 過的也算重複）
+        if (st && s.studentId === st.id && s.date === ev.dateStr) return true;
+        return false;
+      });
+      if (dup) { skipped++; continue; }
+      if (st) {
+        toImport.push({ st: st, dateStr: ev.dateStr, desc: parsed.desc, uid: ev.uid });
+      } else {
+        unmatched.push({ title: ev.summary, dateStr: ev.dateStr });
+      }
+    }
+
+    btn.disabled = false;
+    btn.textContent = '📅 從行事曆匯入';
+
+    if (toImport.length === 0 && unmatched.length === 0) {
+      alert('本月行事曆的活動都已匯入過了！');
+      return;
+    }
+
+    var msgLines = ['找到 ' + events.length + ' 個活動：', ''];
+    if (toImport.length > 0) {
+      msgLines.push('可匯入 ' + toImport.length + ' 筆：');
+      toImport.forEach(function(r) {
+        msgLines.push('  ' + r.dateStr + '  ' + r.st.name + ' (' + r.desc + ')');
+      });
+    }
+    if (skipped > 0) msgLines.push('', '已略過重複：' + skipped + ' 筆');
+    if (unmatched.length > 0) {
+      msgLines.push('', '找不到學生（不匯入）：');
+      unmatched.forEach(function(r) {
+        msgLines.push('  ' + r.dateStr + '  ' + r.title);
+      });
+    }
+    msgLines.push('', '確定匯入 ' + toImport.length + ' 筆記錄？');
+
+    if (!confirm(msgLines.join('\n'))) return;
+
+    toImport.forEach(function(r) {
+      sessions.push({ id: id(), studentId: r.st.id, date: r.dateStr, count: 1, desc: r.desc, calUid: r.uid });
+    });
+    save();
+    render();
+    alert('成功匯入 ' + toImport.length + ' 筆上課記錄！');
   }
 
   function renderSessionsLog() {
