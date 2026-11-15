@@ -1655,6 +1655,169 @@
     });
   }
 
+  // ---- iCal parsing helpers (supports RRULE / EXDATE / RECURRENCE-ID / UTC) ----
+  var CAL_TZ_OFFSET_MIN = 480; // Asia/Taipei (UTC+8)
+  var CAL_DOW = { SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6 };
+
+  function calFmt(y, mo, d) {
+    return y + '-' + (mo < 10 ? '0' : '') + mo + '-' + (d < 10 ? '0' : '') + d;
+  }
+
+  function calUnfold(text) {
+    return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n[ \t]/g, '').split('\n');
+  }
+
+  function calUnescape(s) {
+    return (s || '').replace(/\\n/gi, ' ').replace(/\\,/g, ',').replace(/\;/g, ';').replace(/\\\\/g, '\\');
+  }
+
+  function calParseLine(line) {
+    var idx = line.indexOf(':');
+    if (idx < 0) return null;
+    var left = line.slice(0, idx);
+    var parts = left.split(';');
+    return { name: parts[0].toUpperCase(), value: line.slice(idx + 1) };
+  }
+
+  // iCal 日期時間 -> 台灣當地日期 YYYY-MM-DD
+  function calToLocalDate(value) {
+    var v = (value || '').trim();
+    var m = v.match(/^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})?(Z)?)?$/);
+    if (!m) return '';
+    if (m[7] === 'Z') {
+      var t = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)) + CAL_TZ_OFFSET_MIN * 60000;
+      var d = new Date(t);
+      return calFmt(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate());
+    }
+    return m[1] + '-' + m[2] + '-' + m[3];
+  }
+
+  function calDayNum(dateStr) {
+    var p = dateStr.split('-');
+    return Math.round(Date.UTC(+p[0], +p[1] - 1, +p[2]) / 86400000);
+  }
+
+  function calFromDayNum(n) {
+    var d = new Date(n * 86400000);
+    return calFmt(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate());
+  }
+
+  function calDow(n) { return (((n + 4) % 7) + 7) % 7; } // 1970-01-01 是星期四
+
+  // 展開 RRULE，回傳落在 [rangeStart, rangeEnd] 內的日期
+  function calExpandRule(startDate, rrule, rangeStart, rangeEnd) {
+    var rule = {};
+    rrule.split(';').forEach(function (p) {
+      var kv = p.split('=');
+      rule[kv[0].toUpperCase()] = kv[1];
+    });
+    var freq = rule.FREQ;
+    var interval = parseInt(rule.INTERVAL || '1', 10) || 1;
+    var count = rule.COUNT ? parseInt(rule.COUNT, 10) : 0;
+    var s = calDayNum(startDate);
+    var limit = calDayNum(rangeEnd);
+    if (rule.UNTIL) {
+      var untilDate = calToLocalDate(rule.UNTIL);
+      if (untilDate) { var u = calDayNum(untilDate); if (u < limit) limit = u; }
+    }
+    var byday = [];
+    if (rule.BYDAY) {
+      rule.BYDAY.split(',').forEach(function (x) {
+        var k = x.replace(/[^A-Z]/g, '');
+        if (CAL_DOW[k] !== undefined) byday.push(CAL_DOW[k]);
+      });
+    }
+    var startDow = calDow(s);
+    var startParts = startDate.split('-');
+    var weekStart = s - ((startDow + 6) % 7); // 起始那週的星期一
+    var out = [];
+    var n = 0;
+    for (var day = s; day <= limit; day++) {
+      var match = false;
+      if (freq === 'DAILY') {
+        match = ((day - s) % interval === 0);
+      } else if (freq === 'WEEKLY') {
+        var dows = byday.length ? byday : [startDow];
+        var wk = Math.floor((day - weekStart) / 7);
+        match = (wk % interval === 0) && dows.indexOf(calDow(day)) >= 0;
+      } else if (freq === 'MONTHLY') {
+        var ds = calFromDayNum(day).split('-');
+        var monthsDiff = (+ds[0] - +startParts[0]) * 12 + (+ds[1] - +startParts[1]);
+        match = (monthsDiff % interval === 0) && (+ds[2] === +startParts[2]);
+      } else if (freq === 'YEARLY') {
+        var dy = calFromDayNum(day).split('-');
+        match = ((+dy[0] - +startParts[0]) % interval === 0) && dy[1] === startParts[1] && dy[2] === startParts[2];
+      } else {
+        match = (day === s);
+      }
+      if (!match) continue;
+      n++;
+      if (count && n > count) break;
+      var d2 = calFromDayNum(day);
+      if (d2 >= rangeStart && d2 <= rangeEnd) out.push(d2);
+    }
+    return out;
+  }
+
+  // 解析整份 iCal，回傳該月份、今天（含）以前的所有上課事件
+  function calCollectEvents(icsText, month, todayStr) {
+    var lines = calUnfold(icsText);
+    var vevents = [];
+    var cur = null;
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+      if (line === 'BEGIN:VEVENT') { cur = { exdates: [] }; continue; }
+      if (line === 'END:VEVENT') { if (cur) vevents.push(cur); cur = null; continue; }
+      if (!cur) continue;
+      var p = calParseLine(line);
+      if (!p) continue;
+      if (p.name === 'DTSTART') cur.dtstart = p.value;
+      else if (p.name === 'SUMMARY') cur.summary = calUnescape(p.value).trim();
+      else if (p.name === 'UID') cur.uid = p.value.trim();
+      else if (p.name === 'RRULE') cur.rrule = p.value;
+      else if (p.name === 'STATUS') cur.status = p.value.trim().toUpperCase();
+      else if (p.name === 'RECURRENCE-ID') cur.recId = p.value;
+      else if (p.name === 'EXDATE') {
+        p.value.split(',').forEach(function (v) {
+          var d = calToLocalDate(v);
+          if (d) cur.exdates.push(d);
+        });
+      }
+    }
+
+    var rangeStart = month + '-01';
+    var rangeEnd = month + '-31';
+    if (rangeEnd > todayStr) rangeEnd = todayStr;
+    if (rangeEnd < rangeStart) return [];
+
+    // 單次改期/修改過的活動：蓋掉原本重複規則中那一天
+    var overridden = {};
+    vevents.forEach(function (ev) {
+      if (ev.recId && ev.uid) overridden[ev.uid + '|' + calToLocalDate(ev.recId)] = true;
+    });
+
+    var out = [];
+    vevents.forEach(function (ev) {
+      if (!ev.dtstart || !ev.summary) return;
+      if (ev.status === 'CANCELLED') return;
+      var startDate = calToLocalDate(ev.dtstart);
+      if (!startDate) return;
+      if (ev.rrule && !ev.recId) {
+        calExpandRule(startDate, ev.rrule, rangeStart, rangeEnd).forEach(function (d) {
+          if (ev.exdates.indexOf(d) >= 0) return;
+          if (overridden[ev.uid + '|' + d]) return;
+          out.push({ dateStr: d, summary: ev.summary, uid: ev.uid + '@' + d });
+        });
+      } else {
+        if (startDate.slice(0, 7) !== month) return;
+        if (startDate > todayStr) return;
+        out.push({ dateStr: startDate, summary: ev.summary, uid: ev.recId ? ev.uid + '@' + startDate : ev.uid });
+      }
+    });
+    out.sort(function (a, b) { return a.dateStr < b.dateStr ? -1 : a.dateStr > b.dateStr ? 1 : 0; });
+    return out;
+  }
+
   async function importFromCalendar() {
     var btn = document.getElementById('cal-import-btn');
     var month = document.getElementById('session-month-filter').value;
@@ -1672,25 +1835,7 @@
       return;
     }
 
-    // Parse iCal blocks
-    var events = [];
-    var blocks = icsText.split('BEGIN:VEVENT');
-    for (var i = 1; i < blocks.length; i++) {
-      var blk = blocks[i];
-      var lines = blk.split(/\r?\n/);
-      var dtstart = '', summary = '', uid = '';
-      for (var j = 0; j < lines.length; j++) {
-        var ln = lines[j];
-        if (/^DTSTART/.test(ln)) dtstart = ln.replace(/^DTSTART[^:]*:/, '').trim();
-        else if (/^SUMMARY/.test(ln)) summary = ln.replace(/^SUMMARY[^:]*:/, '').trim();
-        else if (/^UID/.test(ln)) uid = ln.replace(/^UID[^:]*:/, '').trim();
-      }
-      if (!dtstart || !summary) continue;
-      var dateStr = calDateLocal(dtstart);
-      if (dateStr.slice(0,7) !== month) continue;
-      if (dateStr > localDateStr()) continue; // 跳過未來的課程
-      events.push({ dateStr: dateStr, summary: summary, uid: uid });
-    }
+    var events = calCollectEvents(icsText, month, localDateStr());
 
     if (events.length === 0) {
       alert(month + ' 在行事曆上找不到任何活動');
